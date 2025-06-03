@@ -8,6 +8,6 @@ fi
 echo "Generating Linux makefiles with config ${CONFIG}."
 
 # Generate the CMake project.
-export CC=/usr/bin/clang
-export CXX=/usr/bin/clang++
+export CC=/usr/lib/llvm/18/bin/clang
+export CXX=/usr/lib/llvm/18/bin/clang++
 cmake -S .. -B Linux_${CONFIG} -DCMAKE_BUILD_TYPE=${CONFIG}

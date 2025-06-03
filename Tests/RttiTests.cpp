@@ -4,7 +4,8 @@
 // Tests for RTTI and type info systems.
 //
 #include "catch.hh"
-
+#include <string.h>
+#include <cstring>
 #include "TypeInfo.h"
 
 namespace

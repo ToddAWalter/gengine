@@ -13,7 +13,7 @@
 #include <iostream>
 #include <string>
 #include <vector>
-
+#include <cstdint>
 #include "AudioManager.h"
 
 // Basic layer class.

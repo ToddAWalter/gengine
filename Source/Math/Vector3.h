@@ -6,7 +6,7 @@
 #pragma once
 #include <iomanip>
 #include <iostream>
-
+#include <cstdint>
 #include "GMath.h"
 
 class Vector2;

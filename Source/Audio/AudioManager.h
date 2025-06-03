@@ -8,7 +8,7 @@
 #include <functional>
 #include <unordered_map>
 #include <vector>
-
+#include <cstdint>
 #include <fmod.hpp>
 #include <fmod_errors.h>
 

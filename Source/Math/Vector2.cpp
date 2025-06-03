@@ -1,5 +1,4 @@
 #include "Vector2.h"
-
 #include "Vector3.h"
 
 Vector2 Vector2::Zero(0.0f, 0.0f);

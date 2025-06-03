@@ -5,6 +5,7 @@
 //
 #pragma once
 #include <iostream>
+#include <cstdint>
 
 #include "GMath.h"
 
