@@ -95,6 +95,23 @@ bool GEngine::Initialize()
         // Official localized versions of the game also came with a Barn called "override.brn". This barn contains assets that override ordinary assets.
         // Try to load this, but since it's optional, it shouldn't show an error message.
         gAssetManager.LoadBarn("override.brn", BarnSearchPriority::High);
+
+        // Also check if any other Barns are specified in the INI file to load.
+        Config* config = gAssetManager.LoadConfig("GK3.ini");
+        if(config != nullptr)
+        {
+            std::string customBarns = config->GetString("Custom Barns", "");
+            if(!customBarns.empty())
+            {
+                // Multiple paths are separated by semicolons.
+                std::vector<std::string> customBarnNames = StringUtil::Split(customBarns, ';');
+                for(auto& barnName : customBarnNames)
+                {
+                    printf("Load barn %s\n", barnName.c_str());
+                    gAssetManager.LoadBarn(barnName, BarnSearchPriority::High);
+                }
+            }
+        }
     }
 
     // Init tools.
@@ -467,6 +484,14 @@ void GEngine::ProcessInput()
                     if((modState & KMOD_ALT) != 0)
                     {
                         Window::ToggleFullscreen();
+
+                        // On some platforms (Linux for one), it's likely that the OS doesn't TRULY enter "exclusive fullscreen" mode.
+                        // Instead, it just emulates the fullscreen request by making a fullscreen desktop window.
+                        // In this case, we need to also change the game's resolution, or else we'll have a tiny game in a big window.
+                        if(Window::GetFullscreenMode() != Window::Mode::FullscreenExclusive)
+                        {
+                            gRenderer.ChangeResolution(Window::GetResolution());
+                        }
                     }
                 }
 

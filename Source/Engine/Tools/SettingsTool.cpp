@@ -14,7 +14,7 @@ namespace
         if(ImGui::IsItemHovered())
         {
             ImGui::BeginTooltip();
-            ImGui::Text(text);
+            ImGui::Text("%s", text);
             ImGui::EndTooltip();
         }
     }
@@ -54,6 +54,11 @@ void SettingsTool::Render(bool& toolActive)
     ImGui::Checkbox(PREFS_PIXEL_PERFECT_UI_SCALING, &pixelPerfectUIScaling);
     AddTooltip("Only allows scaling UI if pixel boundaries are maintained.\nDisabling allows very flexible scaling behavior, but expect graphical artifacts.");
     gSaveManager.GetPrefs()->Set(PREFS_UI, PREFS_PIXEL_PERFECT_UI_SCALING, pixelPerfectUIScaling);
+
+    float uiScaleBias = Prefs::GetUIScalingBias();
+    ImGui::InputFloat("UI Scale Bias", &uiScaleBias);
+    AddTooltip("Adjusts UI scaling factor up or down from calculated values based on your preference.\nFor example, if a UI would usually be scaled 3x, setting this to -1 causes it to only scale 2x.");
+    gSaveManager.GetPrefs()->Set(PREFS_UI, PREFS_UI_SCALING_BIAS, uiScaleBias);
 
     // End window.
     ImGui::End();

@@ -72,7 +72,7 @@ void AssetManager::Init()
     mShaderCache.Init();
 
     // Load GK3.ini from the root directory so we can bootstrap asset search paths.
-    mSearchPaths.push_back("");
+    mSearchPaths.emplace_back("");
     Config* config = LoadConfig("GK3.ini");
     mSearchPaths.clear();
 
@@ -92,23 +92,25 @@ void AssetManager::Init()
 
     // Add hard-coded default paths *after* any custom paths specified in .INI file.
     // Assets: loose files that aren't packed into a BRN.
-    mSearchPaths.push_back("Assets");
+    mSearchPaths.emplace_back("Assets");
     //TODO: I think we could crawl the Assets folder to automatically add subfolders. Might be nice for better organization of those assets.
 
     // Data: content shipped with the original game; lowest priority so assets can be easily overridden.
     {
-        std::string dataFolder = "Data";
-
         // The original game only ever shipped with one language per SKU, so there was no way to change the language after install.
         // But we would like to support that maybe, for both official and unofficial translations.
         // To support OFFICIAL translations, we'll use Data folders with a suffix equal to the language prefix (e.g. DataF for French, DataG for German).
         if(Localizer::GetLanguagePrefix()[0] != 'E')
         {
-            dataFolder += Localizer::GetLanguagePrefix();
+            mSearchPaths.push_back("Data" + Localizer::GetLanguagePrefix());
         }
 
-        mSearchPaths.push_back(dataFolder);
+        // Lowest priority is the normal "Data" folder.
+        mSearchPaths.emplace_back("Data");
     }
+
+    // Also allow searching the root directory for assets moving forward, but at the lowest priority.
+    mSearchPaths.emplace_back("");
 }
 
 void AssetManager::Shutdown()
@@ -369,6 +371,21 @@ TextAsset* AssetManager::LoadText(const std::string& name, AssetScope scope)
 {
     // Specifically DO NOT delete the asset buffer when creating TextAssets, since they take direct ownership of it.
     return LoadAsset<TextAsset>(name, scope, &mTextAssetCache, false);
+}
+
+TextAsset* AssetManager::LoadLocalizedText(const std::string& name, AssetScope scope)
+{
+    TextAsset* textFile = LoadText(Localizer::GetLanguagePrefix() + name, scope);
+    if(textFile == nullptr)
+    {
+        printf("Failed to load %s%s - falling back on English (E%s).\n", Localizer::GetLanguagePrefix().c_str(), name.c_str(), name.c_str());
+        textFile = LoadText("E" + name, scope);
+        if(textFile == nullptr)
+        {
+            printf("Failed to load localized text %s!\n", name.c_str());
+        }
+    }
+    return textFile;
 }
 
 Config* AssetManager::LoadConfig(const std::string& name)

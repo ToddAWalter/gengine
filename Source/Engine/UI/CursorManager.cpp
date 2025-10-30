@@ -20,7 +20,7 @@ void CursorManager::Update(float deltaTime)
     if(mDesiredCursor != nullptr)
     {
         // If the desired cursor differs from the active cursor (or animation mode is different), change active cursor.
-        if(mDesiredCursor != mActiveCursor || mDesiredCursorAnimate != mActiveCursor->IsAnimating())
+        if(mActiveCursor == nullptr || mDesiredCursor != mActiveCursor || mDesiredCursorAnimate != mActiveCursor->IsAnimating())
         {
             mActiveCursor = mDesiredCursor;
             mActiveCursor->Activate(mDesiredCursorAnimate);
@@ -41,7 +41,6 @@ void CursorManager::Update(float deltaTime)
 
 void CursorManager::UseDefaultCursor(int priority)
 {
-    // The default cursor has low priority - only use it if nothing of higher priority is specified.
     SetDesiredCursor(mDefaultCursor, priority);
 }
 

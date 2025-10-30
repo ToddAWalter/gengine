@@ -44,13 +44,14 @@ public:
 
     void WalkOutOfRegion(int regionIndex, const Vector3& exitPosition, const Heading& exitHeading, const std::function<void()>& finishCallback);
 
+    void SetAllowSkip(bool allow) { mAllowWalkSkip = allow; }
     void SkipToEnd(bool alsoSkipWalkEndAnim = false);
     void StopWalk();
 
     bool AtPosition(const Vector3& position, float maxDistance = kAtNodeDist);
-    bool IsWalking() const { return mWalkActions.size() > 0; }
+    bool IsWalking() const { return !mWalkActions.empty(); }
     bool IsWalkingExceptTurn() const { return IsWalking() && mWalkActions.back() != WalkOp::TurnToFace; }
-    Vector3 GetDestination() const { return mPath.size() > 0 ? mPath.front() : Vector3::Zero; }
+    Vector3 GetDestination() const { return !mPath.empty() ? mPath.front() : Vector3::Zero; }
 
     bool IsWalkAnimation(VertexAnimation* vertexAnim) const;
 
@@ -70,7 +71,7 @@ private:
     // Turn speeds. When walking, turn faster when the next path node is very close - slower when farther away.
     // A faster speed is used for turning in place when not walking.
     static constexpr float kWalkTurnSpeedMin = Math::kPiOver2;
-    static constexpr float kWalkTurnSpeedMax = Math::k2Pi * 2;
+    static constexpr float kWalkTurnSpeedMax = Math::k2Pi * 1.5f;
     static constexpr float kTurnSpeed = Math::k2Pi;
 
     // CONFIG
@@ -134,6 +135,10 @@ private:
 
     // If true, need to continue walk anim during next update loop.
     bool mNeedContinueWalkAnim = false;
+
+    // If true, actor is allowed to skip walks during action skip. Otherwise, the whole walk must be simulated.
+    // Only use case is the demon in the final fight so far.
+    bool mAllowWalkSkip = true;
 
     // REGION SUPPORT
     // A callback for exiting a region.

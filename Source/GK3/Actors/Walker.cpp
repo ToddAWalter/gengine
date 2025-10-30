@@ -186,6 +186,8 @@ void Walker::WalkOutOfRegion(int regionIndex, const Vector3& exitPosition, const
 
 void Walker::SkipToEnd(bool alsoSkipWalkEndAnim)
 {
+    if(!mAllowWalkSkip) { return; }
+
     // If not walking, or at the end of the walk, nothing to skip.
     WalkOp currentWalkOp = GetCurrentWalkOp();
     if(currentWalkOp == WalkOp::None)
@@ -362,7 +364,7 @@ void Walker::OnUpdate(float deltaTime)
         // Kind of a HACK: if we're walking, and action manager is skipping, move to end of movement ASAP.
         // Without this, walks during fast-forwards can get stuck and cause the game to freeze.
         //TODO: *Probably* a better way to handle this, with a substantial refactor...
-        if(gActionManager.IsSkippingCurrentAction())
+        if(gActionManager.IsSkippingCurrentAction() && mAllowWalkSkip)
         {
             SkipToEnd(true);
             return;
@@ -416,7 +418,7 @@ void Walker::OnUpdate(float deltaTime)
                 // So, force-set it to something reasonable!
                 if(mWalkToSeeTarget != nullptr)
                 {
-                    Vector3 dir = mWalkToSeeTarget->GetPosition() - mGKOwner->GetPosition();
+                    Vector3 dir = mWalkToSeeTarget->GetAABB().GetCenter() - mGKOwner->GetPosition();
                     dir.y = 0.0f;
                     mTurnToFaceDir = Vector3::Normalize(dir);
                 }
@@ -490,11 +492,16 @@ void Walker::WalkToInternal(const Vector3& position, const Heading& heading, con
     WalkOp currentWalkOp = GetCurrentWalkOp();
     mWalkActions.clear();
 
+    // Make sure the passed in position is *actually* the position we will walk to.
+    // Sometimes the position given is under the floor or floating in the air - ground it.
+    Vector3 walkPosition = position;
+    walkPosition.y = gSceneManager.GetScene()->GetFloorY(position);
+
     // If action skipping, we don't need to find a path or do anything - just put the walker directly at the desired position/heading!
-    if(gActionManager.IsSkippingCurrentAction())
+    if(gActionManager.IsSkippingCurrentAction() && mAllowWalkSkip)
     {
         StopAllWalkAnimations();
-        mGKOwner->SetPosition(position);
+        mGKOwner->SetPosition(walkPosition);
         if(heading.IsValid())
         {
             mGKOwner->SetHeading(heading);
@@ -512,11 +519,6 @@ void Walker::WalkToInternal(const Vector3& position, const Heading& heading, con
         mTurnToFaceDir = heading.ToDirection();
         mWalkActions.push_back(WalkOp::TurnToFace);
     }
-
-    // Make sure the passed in position is *actually* the position we will walk to.
-    // Sometimes the position given is under the floor or floating in the air - ground it.
-    Vector3 walkPosition = position;
-    walkPosition.y = gSceneManager.GetScene()->GetFloorY(position);
 
     // Do we need to walk?
     if(!AtPosition(walkPosition))

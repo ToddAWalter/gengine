@@ -5,13 +5,13 @@ cmake_minimum_required(VERSION 3.17)
 set(CMAKE_OSX_ARCHITECTURES "x86_64" CACHE STRING "")
 
 # Define G-Engine project.
-project(gengine VERSION 0.4.0
+project(gengine VERSION 0.5.1
                 DESCRIPTION "Gabriel Knight 3 game engine"
                 LANGUAGES C CXX)
 
-# Build for C++14, standard required, no extensions.
+# Build for C++17, standard required, no extensions.
 # Using global "set" so that all targets use the same rules.
-set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
@@ -111,12 +111,14 @@ if(MSVC)
         /wd4711 # function was automatically inlined
         /wd4774 # snprintf format not literal (the only spot this occurs seems tricky to fix)
         /wd4820 # padding added
+        /wd4866 # left-to-right order can't be guaranteed
         /wd5026 # move constructor implicitly deleted
         /wd5027 # move assignment operator implicitly deleted
         /wd5039 # pointer to potentially throwing extern c function (triggered by fmod)
         /wd5045 # warns when scenario when Spectre mitigation would be applied to code if /QSpectre flag is set
         /wd5219 # implicit conversion from x to y (triggered by everything)
         /wd5245 # unreferenced function with internal linkage has been removed
+        /wd5262 # implicit fallthrough, missing break statement
         /wd5267 # implicit copy constructor is deprecated with user-provided destructor
     )
 else() # GCC/Clang
