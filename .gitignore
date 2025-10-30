@@ -20,6 +20,7 @@ Data*
 /Build/Mac
 /Build/Windows
 /Build/Linux*
+Build*
 
 ## Ignore imgui generated files
 imgui.ini
@@ -64,3 +65,5 @@ cmake-build-*
 # Appveyor
 ####
 build_appveyor
+
+
