@@ -6,6 +6,7 @@
 #pragma once
 #include "Actor.h"
 
+class PersistState;
 class Texture;
 
 class Chessboard : public Actor
@@ -21,12 +22,14 @@ public:
     void CenterEgo();
     void BadLand();
 
+    void OnPersist(PersistState& ps);
+
 protected:
     void OnUpdate(float deltaTime) override;
 
 private:
     // Tracks how many times Gabe has landed on each tile.
-    int mLandedCounts[8][8];
+    int mLandedCounts[8][8] = { 0 };
 
     // Tracks how many sword tiles Gabe has landed on.
     // The goal of this puzzle is to land on all 16 tiles.

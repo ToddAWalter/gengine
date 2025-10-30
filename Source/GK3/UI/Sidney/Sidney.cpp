@@ -2,28 +2,24 @@
 
 #include "ActionManager.h"
 #include "AssetManager.h"
-#include "GameProgress.h"
 #include "InventoryManager.h"
 #include "LocationManager.h"
 #include "Scene.h"
 #include "SidneyButton.h"
+#include "SidneyFiles.h"
 #include "SidneyUtil.h"
-#include "Texture.h"
 #include "UIButton.h"
-#include "UICanvas.h"
 #include "UIImage.h"
 #include "UILabel.h"
+#include "UIUtil.h"
+#include "Window.h"
 
 namespace
 {
     UIButton* CreateMainButton(Actor* parent, const std::string& buttonId, float xPos)
     {
-        Actor* actor = new Actor(TransformType::RectTransform);
-        actor->GetTransform()->SetParent(parent->GetTransform());
-        UIButton* button = actor->AddComponent<UIButton>();
-
-        button->GetRectTransform()->SetPivot(0.0f, 1.0f);
-        button->GetRectTransform()->SetAnchor(0.0f, 1.0f);
+        UIButton* button = UI::CreateWidgetActor<UIButton>(buttonId, parent);
+        button->GetRectTransform()->SetAnchor(AnchorPreset::TopLeft);
         button->GetRectTransform()->SetAnchoredPosition(xPos, -24.0f);
 
         button->SetUpTexture(gAssetManager.LoadTexture("B_" + buttonId + "_U.BMP"));
@@ -38,28 +34,16 @@ Sidney::Sidney() : Actor("Sidney", TransformType::RectTransform)
 {
     // Sidney will be layered near the bottom.
     // A lot of stuff needs to appear above it (inventory, status overlay, etc).
-    AddComponent<UICanvas>(0);
-
-    // Canvas takes up entire screen.
-    RectTransform* rectTransform = GetComponent<RectTransform>();
-    rectTransform->SetSizeDelta(0.0f, 0.0f);
-    rectTransform->SetAnchorMin(Vector2::Zero);
-    rectTransform->SetAnchorMax(Vector2::One);
-
-    // Add black background that eats input.
-    UIImage* background = AddComponent<UIImage>();
-    background->SetTexture(&Texture::Black);
-    background->SetReceivesInput(true);
+    UI::AddCanvas(this, 0, Color32::Black);
 
     // Add desktop background image.
-    Actor* desktopBackground = new Actor(TransformType::RectTransform);
-    desktopBackground->GetTransform()->SetParent(GetTransform());
-    UIImage* desktopBackgroundImage = desktopBackground->AddComponent<UIImage>();
+    UIImage* desktopBackgroundImage = UI::CreateWidgetActor<UIImage>("Desktop", this);
     desktopBackgroundImage->SetTexture(gAssetManager.LoadTexture("S_MAIN_SCN.BMP"), true);
+    Actor* desktopBackground = desktopBackgroundImage->GetOwner();
 
     // Add exit button as child of desktop background.
     {
-        SidneyButton* button = new SidneyButton(desktopBackground);
+        SidneyButton* button = new SidneyButton("ExitButton", desktopBackground);
         button->SetFont(gAssetManager.LoadFont("SID_TEXT_18.FON"));
         button->SetText(SidneyUtil::GetMainScreenLocalizer().GetText("MenuItem9"));
         button->SetWidth(80.0f);
@@ -68,7 +52,7 @@ Sidney::Sidney() : Actor("Sidney", TransformType::RectTransform)
         button->SetPressCallback([this](){
             Hide();
         });
-        
+
         button->GetRectTransform()->SetPivot(1.0f, 0.0f); // Bottom-Right
         button->GetRectTransform()->SetAnchor(1.0f, 0.0f); // Bottom-Right
         button->GetRectTransform()->SetAnchoredPosition(-10.0f, 10.0f); // 10x10 offset from Bottom-Right
@@ -116,8 +100,41 @@ Sidney::Sidney() : Actor("Sidney", TransformType::RectTransform)
         buttonPos += kButtonSpacing;
         UIButton* filesButton = CreateMainButton(desktopBackground, "FILES", buttonPos);
         filesButton->SetPressCallback([this](UIButton* button){
+
+            // Show file selector, along with button SFX.
             gAudioManager.PlaySFX(gAssetManager.LoadAudio("SIDENTER.WAV"));
-            mFiles.Show();
+            mFiles.Show([this](SidneyFile* selectedFile){
+
+                // When a file is clicked, try to direct to the most relevant area of Sidney, with that file opened.
+                // Images => go to analyze with that file opened.
+                // Text/Audio => go to translate with that file opened.
+                // Fingerprints/Plates => go to suspects with that file opened.
+                switch(selectedFile->type)
+                {
+                    case SidneyFileType::Image:
+                        mAnalyze.Show(selectedFile->id);
+                        break;
+
+                    case SidneyFileType::Text:
+                    case SidneyFileType::Audio:
+                        mTranslate.Show(selectedFile->id);
+                        break;
+
+                    case SidneyFileType::License:
+                    case SidneyFileType::Fingerprint:
+                        mSuspects.Show();
+                        mSuspects.OpenFile(selectedFile->id);
+                        break;
+
+                    case SidneyFileType::Shape:
+                    default:
+                        // Do nothing for anything else.
+                        break;
+                }
+
+                // Plays another button SFX upon selecting a file.
+                gAudioManager.PlaySFX(gAssetManager.LoadAudio("SIDENTER.WAV"));
+            });
         });
 
         buttonPos += kButtonSpacing;
@@ -181,6 +198,33 @@ Sidney::Sidney() : Actor("Sidney", TransformType::RectTransform)
 
     mFiles.Init(this);
 
+    // Add room background images around the desktop.
+    {
+        UIImage* topImage = UI::CreateWidgetActor<UIImage>("BGTop", desktopBackgroundImage);
+        topImage->GetRectTransform()->SetAnchor(AnchorPreset::Top);
+        topImage->GetRectTransform()->SetPivot(0.5f, 0.0f);
+        topImage->SetTexture(gAssetManager.LoadTexture("S_SID_BKGD1024_TOP_A.BMP"), true);
+
+        UIImage* bottomImage = UI::CreateWidgetActor<UIImage>("BGBottom", desktopBackgroundImage);
+        bottomImage->GetRectTransform()->SetAnchor(AnchorPreset::Bottom);
+        bottomImage->GetRectTransform()->SetPivot(0.5f, 1.0f);
+        bottomImage->SetTexture(gAssetManager.LoadTexture("S_SID_BKGD1024_BOTTOM_A.BMP"), true);
+
+        UIImage* leftImage = UI::CreateWidgetActor<UIImage>("BGLeft", desktopBackgroundImage);
+        leftImage->GetRectTransform()->SetAnchor(AnchorPreset::Left);
+        leftImage->GetRectTransform()->SetPivot(1.0f, 0.5f);
+        leftImage->SetTexture(gAssetManager.LoadTexture("S_SID_BKGD1024_LEFT_A.BMP"), true);
+
+        UIImage* rightImage = UI::CreateWidgetActor<UIImage>("BGRight", desktopBackgroundImage);
+        rightImage->GetRectTransform()->SetAnchor(AnchorPreset::Right);
+        rightImage->GetRectTransform()->SetPivot(0.0f, 0.5f);
+        rightImage->SetTexture(gAssetManager.LoadTexture("S_SID_BKGD1024_RIGHT_A.BMP"), true);
+
+        mLamaImage = UI::CreateWidgetActor<UIImage>("BGOverlay", desktopBackgroundImage);
+        mLamaImage->GetRectTransform()->SetAnchor(AnchorPreset::BottomLeft);
+        mLamaImage->SetTexture(gAssetManager.LoadTexture("S_SID_BKGD800_LAMA_A.BMP"), true);
+    }
+
     // Not active by default.
     SetActive(false);
 }
@@ -196,7 +240,11 @@ void Sidney::Show()
 
 void Sidney::Hide()
 {
+    // It's possible to exit Sidney with the file window still up. If so, close it so it's not open when Sidney is next opened.
+    mFiles.HideAllFileWindows();
+
     // Hide Sidney UI.
+    if(!IsActive()) { return; }
     SetActive(false);
 
     // Whenever you exit Sidney, no matter where you are in the game, you warp to R25.
@@ -232,6 +280,10 @@ void Sidney::OnPersist(PersistState& ps)
 void Sidney::OnUpdate(float deltaTime)
 {
     if(!IsActive()) { return; }
+
+    // This is a bit wasteful, but update the lama image based on screen resolution.
+    // It's rare to change resolution in Sidney, but if you do, we want to make sure this reacts.
+    mLamaImage->SetEnabled(Window::GetHeight() > 480);
 
     // We want to keep the "New Email" label updating at all times.
     mEmail.UpdateNewEmail(deltaTime);

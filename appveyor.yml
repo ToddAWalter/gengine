@@ -5,7 +5,7 @@
 # The version number being built. Should match version in CMake/at runtime.
 # This is the ACTUAL version number used when uploading to GitHub Releases.
 environment:
-  APP_VERSION: 0.3.0
+  APP_VERSION: 0.4.0
 
 # Appveyor version number - used only for the unique build version required by Appveyor.
 version: $(APP_VERSION)-{build}
@@ -67,7 +67,7 @@ for:
       - image: Ubuntu
   before_build:
     - sh: sudo DEBIAN_FRONTEND=noninteractive apt-get -yq install mesa-common-dev libgl1-mesa-dev libglu1-mesa-dev
-    - sh: cmake -B build_appveyor -DCMAKE_BUILD_TYPE=${CONFIGURATION}
+    - sh: cmake -B build_appveyor -DCMAKE_BUILD_TYPE=Release
   build_script:
     - sh: cmake --build build_appveyor --target deploy
   before_test:

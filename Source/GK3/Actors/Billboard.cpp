@@ -13,14 +13,10 @@ Billboard::Billboard(Actor* owner) : Component(owner)
 {
     mMeshRenderer = GetOwner()->GetComponent<MeshRenderer>();
     mInitialPos = GetRotatePosition();
+    OnLateUpdate(0.0f);
 }
 
-void Billboard::ForceUpdate()
-{
-    Billboard::OnUpdate(0.0f);
-}
-
-void Billboard::OnUpdate(float deltaTime)
+void Billboard::OnLateUpdate(float deltaTime)
 {
     // Get the camera's forward vector, using UnitZ as the default worst case.
     Vector3 camForwardDir = Vector3::UnitZ;
@@ -33,7 +29,7 @@ void Billboard::OnUpdate(float deltaTime)
             camForwardDir = camera->GetForward();
         }
     }
-    
+
     // Use heading helpers to convert from facing direction to quaternion (ignoring Y axis).
     // This creates a rotation that points in the direction of the camera's forward vector.
     Quaternion rotation = Heading::FromDirection(camForwardDir).ToQuaternion();

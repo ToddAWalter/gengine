@@ -4,12 +4,12 @@
 #include "AssetManager.h"
 #include "CursorManager.h"
 #include "GameProgress.h"
+#include "GK3UI.h"
 #include "InputManager.h"
 #include "InventoryManager.h"
 #include "Scene.h"
 #include "Texture.h"
 #include "UIButton.h"
-#include "UICanvas.h"
 #include "UIImage.h"
 #include "UIUtil.h"
 
@@ -17,13 +17,7 @@ FingerprintScreen::FingerprintScreen() : Actor("FingerprintScreen", TransformTyp
     mLayer("FingerprintLayer")
 {
     // Add canvas to render UI elements.
-	AddComponent<UICanvas>(7);
-	
-	// Add black background image that blocks out the scene entirely.
-    UIImage* background = AddComponent<UIImage>();
-    background->SetTexture(&Texture::Black);
-    background->GetRectTransform()->SetSizeDelta(0.0f, 0.0f);
-    background->GetRectTransform()->SetAnchor(AnchorPreset::CenterStretch);
+    UI::AddCanvas(this, 7, Color32::Black);
 
     // The background has a button so we can capture clicks on it.
     UIButton* backgroundButton = AddComponent<UIButton>();
@@ -32,12 +26,12 @@ FingerprintScreen::FingerprintScreen() : Actor("FingerprintScreen", TransformTyp
     });
 
     // Add base background image, which shows the fingerprint box up-close.
-    UIImage* baseImage = UIUtil::NewUIActorWithWidget<UIImage>(this);
+    UIImage* baseImage = UI::CreateWidgetActor<UIImage>("Background", this);
     baseImage->SetTexture(gAssetManager.LoadTexture("FP_BASE.BMP"), true);
-	
-	// Add exit button to bottom-left corner of screen.
+
+    // Add exit button to bottom-left corner of screen.
     {
-        UIButton* exitButton = UIUtil::NewUIActorWithWidget<UIButton>(baseImage->GetOwner());
+        UIButton* exitButton = UI::CreateWidgetActor<UIButton>("ExitButton", baseImage);
         exitButton->SetUpTexture(gAssetManager.LoadTexture("EXITN.BMP"));
         exitButton->SetDownTexture(gAssetManager.LoadTexture("EXITD.BMP"));
         exitButton->SetHoverTexture(gAssetManager.LoadTexture("EXITHOV.BMP"));
@@ -54,7 +48,7 @@ FingerprintScreen::FingerprintScreen() : Actor("FingerprintScreen", TransformTyp
 
     // Add brush image along with button to pick up brush.
     {
-        mBrushImage = UIUtil::NewUIActorWithWidget<UIImage>(baseImage->GetOwner());
+        mBrushImage = UI::CreateWidgetActor<UIImage>("Brush", baseImage);
         mBrushImage->SetTexture(gAssetManager.LoadTexture("FP_BRUSH.BMP"), true);
         mBrushImage->GetRectTransform()->SetAnchor(AnchorPreset::BottomLeft);
         mBrushImage->GetRectTransform()->SetAnchoredPosition(128.0f, 90.0f);
@@ -67,7 +61,7 @@ FingerprintScreen::FingerprintScreen() : Actor("FingerprintScreen", TransformTyp
 
     // Add button for dipping brush in the dust area.
     {
-        UIButton* dustButton = UIUtil::NewUIActorWithWidget<UIButton>(baseImage->GetOwner());
+        UIButton* dustButton = UI::CreateWidgetActor<UIButton>("DustButton", baseImage);
         dustButton->GetRectTransform()->SetAnchor(AnchorPreset::BottomLeft);
         dustButton->GetRectTransform()->SetAnchoredPosition(149.0f, 480.0f - 337.0f);
         dustButton->GetRectTransform()->SetSizeDelta(127.0f, 108.0f);
@@ -78,7 +72,7 @@ FingerprintScreen::FingerprintScreen() : Actor("FingerprintScreen", TransformTyp
 
     // Add button for tape dispenser.
     {
-        UIButton* tapeButton = UIUtil::NewUIActorWithWidget<UIButton>(baseImage->GetOwner());
+        UIButton* tapeButton = UI::CreateWidgetActor<UIButton>("TapeButton", baseImage);
         tapeButton->GetRectTransform()->SetAnchor(AnchorPreset::BottomLeft);
         tapeButton->GetRectTransform()->SetAnchoredPosition(278.0f, 103.0f);
         tapeButton->GetRectTransform()->SetSizeDelta(106.0f, 154.0f);
@@ -89,7 +83,7 @@ FingerprintScreen::FingerprintScreen() : Actor("FingerprintScreen", TransformTyp
 
     // Add button for fingerprint cloth.
     {
-        UIButton* clothButton = UIUtil::NewUIActorWithWidget<UIButton>(baseImage->GetOwner());
+        UIButton* clothButton = UI::CreateWidgetActor<UIButton>("ClothButton", baseImage);
         clothButton->GetRectTransform()->SetAnchor(AnchorPreset::BottomLeft);
         clothButton->GetRectTransform()->SetAnchoredPosition(0.0f, 94.0f);
         clothButton->GetRectTransform()->SetSizeDelta(140.0f, 160.0f);
@@ -102,7 +96,7 @@ FingerprintScreen::FingerprintScreen() : Actor("FingerprintScreen", TransformTyp
     {
         // Create a button that takes up the whole right-panel area of the interface.
         // This has two purposes: to catch input when clicking/dragging in this area. And to help center the closeup image.
-        mRightPanelButton = UIUtil::NewUIActorWithWidget<UIButton>(baseImage->GetOwner());
+        mRightPanelButton = UI::CreateWidgetActor<UIButton>("RightPanelButton", baseImage);
         mRightPanelButton->GetRectTransform()->SetAnchor(AnchorPreset::TopRight);
         mRightPanelButton->GetRectTransform()->SetAnchoredPosition(-2.0f, -2.0f);
         mRightPanelButton->GetRectTransform()->SetSizeDelta(249.0f, 476.0f);
@@ -111,7 +105,7 @@ FingerprintScreen::FingerprintScreen() : Actor("FingerprintScreen", TransformTyp
         });
 
         // Add image to show the object being fingerprinted.
-        mFingerprintObjectImage = UIUtil::NewUIActorWithWidget<UIImage>(mRightPanelButton->GetOwner());
+        mFingerprintObjectImage = UI::CreateWidgetActor<UIImage>("FingerprintObjectImage", mRightPanelButton);
         mFingerprintObjectImage->SetTexture(&Texture::Black);
         mFingerprintObjectImage->GetRectTransform()->SetAnchor(AnchorPreset::Left);
         mFingerprintObjectImage->GetRectTransform()->SetAnchoredPosition(0.0f, -8.0f);
@@ -119,7 +113,7 @@ FingerprintScreen::FingerprintScreen() : Actor("FingerprintScreen", TransformTyp
          // Create a set of images used to display fingerprints.
         for(int i = 0; i < kMaxFingerprintImages; ++i)
         {
-            UIImage* image = UIUtil::NewUIActorWithWidget<UIImage>(mRightPanelButton->GetOwner());
+            UIImage* image = UI::CreateWidgetActor<UIImage>("Fingerprint" + std::to_string(i), mRightPanelButton);
             image->GetRectTransform()->SetAnchor(AnchorPreset::BottomLeft);
             image->SetEnabled(false);
             mPrintsToCollect[i].image = image;
@@ -148,10 +142,10 @@ FingerprintScreen::FingerprintScreen() : Actor("FingerprintScreen", TransformTyp
         FingerprintObject& object = mObjects["HAND_MIRROR"];
         object.textureName = "FP_LHOMIR.BMP";
         object.anchor = AnchorPreset::Center;
-        
+
         object.fingerprints.emplace_back();
         object.fingerprints.back().textureName = "FP_LHOMIR_P1.BMP";
-        object.fingerprints.back().position = Vector2(160.0f, 134.0f);
+        object.fingerprints.back().position = Vector2(159.0f, 134.0f);
         object.fingerprints.back().uncoverPrintLicensePlate = "2O8A805PF1";
         object.fingerprints.back().invItemName = "HOWARDS_FINGERPRINT";
         object.fingerprints.back().flagName = "GotMirrorHowardPrint";
@@ -162,7 +156,7 @@ FingerprintScreen::FingerprintScreen() : Actor("FingerprintScreen", TransformTyp
         object.textureName = "FP_COLT45.BMP";
         object.anchoredPosition = Vector2(0.0f, 12.0f);
         object.collectPrintLicensePlates.push_back("0A89N052H2");
-        
+
         object.fingerprints.emplace_back();
         object.fingerprints.back().textureName = "FP_COLT45_P1.BMP";
         object.fingerprints.back().position = Vector2(65.0f, 279.0f);
@@ -175,7 +169,7 @@ FingerprintScreen::FingerprintScreen() : Actor("FingerprintScreen", TransformTyp
         FingerprintObject& object = mObjects["CIG_PACK_IN_DRAWER"];
         object.textureName = "FP_CIGS.BMP";
         object.collectPrintLicensePlates.push_back("0A89N052H2");
-        
+
         object.fingerprints.emplace_back();
         object.fingerprints.back().textureName = "FP_CIGS_P1.BMP";
         object.fingerprints.back().position = Vector2(101.0f, 201.0f);
@@ -189,7 +183,7 @@ FingerprintScreen::FingerprintScreen() : Actor("FingerprintScreen", TransformTyp
         object.textureName = "FP_SUITCA.BMP";
         object.anchoredPosition = Vector2(0.0f, -8.0f);
         object.collectPrintLicensePlates.push_back("0A89N052H2");
-        
+
         object.fingerprints.emplace_back();
         object.fingerprints.back().textureName = "FP_SUITCA_P1.BMP";
         object.fingerprints.back().position = Vector2(111.0f, 370.0f);
@@ -208,7 +202,7 @@ FingerprintScreen::FingerprintScreen() : Actor("FingerprintScreen", TransformTyp
     {
         FingerprintObject& object = mObjects["BOOK_IN_DRAWER"];
         object.textureName = "FP_BOOKIMMORTALS.BMP";
-        
+
         object.fingerprints.emplace_back();
         object.fingerprints.back().textureName = "FP_BOOKIMMORTALS_P1.BMP";
         object.fingerprints.back().position = Vector2(113.0f, 144.0f);
@@ -224,7 +218,7 @@ FingerprintScreen::FingerprintScreen() : Actor("FingerprintScreen", TransformTyp
         object.textureName = "FP_OCTSHOT.BMP";
         object.anchor = AnchorPreset::Center;
         object.anchoredPosition = Vector2(0.0f, 8.0f);
-        
+
         object.fingerprints.emplace_back();
         object.fingerprints.back().textureName = "FP_OCTSHOT_P1.BMP";
         object.fingerprints.back().position = Vector2(81.0f, 214.0f);
@@ -275,7 +269,7 @@ FingerprintScreen::FingerprintScreen() : Actor("FingerprintScreen", TransformTyp
     {
         FingerprintObject& object = mObjects["LSR_ENVELOPE_INV"];
         object.textureName = "FP_LSRENV.BMP";
-        
+
         object.fingerprints.emplace_back();
         object.fingerprints.back().textureName = "FP_LSRENV_P1.BMP";
         object.fingerprints.back().position = Vector2(178.0f, 305.0f);
@@ -366,8 +360,8 @@ FingerprintScreen::FingerprintScreen() : Actor("FingerprintScreen", TransformTyp
         object.fingerprints.back().flagNameGrace = "GotWaterBottleEstellePrintGrace";
         object.fingerprints.back().scoreName = "e_303p_wod_fingerprint_kit_water_bottle";
     }
-    
-	// Hide by default.
+
+    // Hide by default.
     SetActive(false);
 }
 
@@ -424,10 +418,10 @@ void FingerprintScreen::Show(const std::string& nounName)
             // Set fingerprint texture on the image.
             FingerprintObject::Fingerprint& fp = mActiveObject->fingerprints[fpIndex];
             Texture* printTexture = gAssetManager.LoadTexture(fp.textureName);
-            printTexture->SetTransparentColor(Color32::Black);
-            //Texture* alphaTexture = gAssetManager.LoadTexture(printTexture->GetNameNoExtension() + "A");
-            //printTexture->ApplyAlphaChannel(*alphaTexture, true);
             mPrintsToCollect[imageIndex].image->SetTexture(printTexture, true);
+
+            // Fingerprint images are surrounded by black pixels that should render as transparent.
+            mPrintsToCollect[imageIndex].image->SetTransparentColor(Color32::Black);
 
             // Enable the image and position it correctly.
             mPrintsToCollect[imageIndex].image->SetEnabled(true);
@@ -460,20 +454,20 @@ void FingerprintScreen::Show(const std::string& nounName)
     {
         mPrintsToCollect[imageIndex].image->SetEnabled(false);
     }
-        
+
     // Reset some state vars.
     PutDownBrush(); // resets cursor state and brush image state
     mDistanceDusted = 0.0f;
     mTapePrintIndex = -1;
 
-	// Actually show the stuff!
-	SetActive(true);
+    // Actually show the stuff!
+    SetActive(true);
 }
 
 void FingerprintScreen::Hide()
 {
     if(!IsActive()) { return; }
-	SetActive(false);
+    SetActive(false);
     gLayerManager.PopLayer(&mLayer);
 }
 
@@ -493,19 +487,19 @@ void FingerprintScreen::OnUpdate(float deltaTime)
         break;
 
     case CursorState::Brush:
-        gCursorManager.UseCustomCursor(mBrushCursor);
+        gCursorManager.UseCustomCursor(mBrushCursor, 10);
         break;
 
     case CursorState::DustedBrush:
-        gCursorManager.UseCustomCursor(mDustedBrushCursor);
+        gCursorManager.UseCustomCursor(mDustedBrushCursor, 10);
         break;
 
     case CursorState::Tape:
-        gCursorManager.UseCustomCursor(mTapeCursor);
+        gCursorManager.UseCustomCursor(mTapeCursor, 10);
         break;
 
     case CursorState::TapeWithPrint:
-        gCursorManager.UseCustomCursor(mUsedTapeCursor);
+        gCursorManager.UseCustomCursor(mUsedTapeCursor, 10);
         break;
     }
 
@@ -544,7 +538,7 @@ void FingerprintScreen::OnUpdate(float deltaTime)
                     currentAlpha += gInputManager.GetMouseDelta().GetLength() * deltaTime * 0.2f;
                     currentAlpha = Math::Clamp(currentAlpha, 0.0f, 1.0f);
                     mPrintsToCollect[i].alpha = currentAlpha;
-                    printf("Alpha %f\n", currentAlpha);
+                    //printf("Alpha %f\n", currentAlpha);
 
                     mPrintsToCollect[i].image->SetColor(Color32(255, 255, 255, currentAlpha * 255));
 
@@ -561,7 +555,7 @@ void FingerprintScreen::OnUpdate(float deltaTime)
     }
 
     // Check for exit button shortcut.
-    if(gInputManager.IsKeyLeadingEdge(SDL_SCANCODE_ESCAPE) && !gActionManager.IsActionPlaying() && !gActionManager.IsSkippingCurrentAction())
+    if(gGK3UI.CanExitScreen(mLayer) && gInputManager.IsKeyLeadingEdge(SDL_SCANCODE_ESCAPE))
     {
         mExitButton->AnimatePress();
     }
@@ -805,7 +799,7 @@ void FingerprintScreen::OnCollectWilkesDirtyGlass()
         gActionManager.ExecuteSheepAction("wait StartDialogue(\"1EK0259291\", 1)", [this](const Action* action){
 
             // Weirdly, the noun for this choice in the NVC is "Crow"...
-            gActionManager.ShowTopicBar("Crow", [this](const Action* action){
+            gActionManager.ShowTopicBar("Crow", false, [this](const Action* action){
 
                 // If chose Wilkes...you were right! And you actually get the points for guessing this correctly (or being observant earlier in the timeblock).
                 if(StringUtil::EqualsIgnoreCase(action->verb, "T_WILKES"))
@@ -878,7 +872,7 @@ void FingerprintScreen::OnCollectBuchelliDirtyGlass()
         gActionManager.ExecuteSheepAction("wait StartDialogue(\"1EK0259291\", 1)", [this](const Action* action){
 
             // Weirdly, the noun for this choice in the NVC is "Dagger"...
-            gActionManager.ShowTopicBar("Dagger", [this](const Action* action){
+            gActionManager.ShowTopicBar("Dagger", false, [this](const Action* action){
 
                 // If chose Buchelli...you were right!
                 // There are actually no points for this, but you will get points when you take Wilkes' print next.

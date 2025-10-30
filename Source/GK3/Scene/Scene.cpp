@@ -7,31 +7,34 @@
 #include "ActionManager.h"
 #include "Animator.h"
 #include "AssetManager.h"
+#include "Billboard.h"
 #include "BSPActor.h"
 #include "Camera.h"
-#include "CharacterManager.h"
 #include "Collisions.h"
 #include "Color32.h"
 #include "Debug.h"
 #include "GameCamera.h"
 #include "GameProgress.h"
 #include "GameTimers.h"
+#include "GK3UI.h"
 #include "GKActor.h"
 #include "GKProp.h"
+#include "GPSOverlay.h"
 #include "InventoryManager.h"
 #include "LocationManager.h"
-#include "GMath.h"
 #include "MeshRenderer.h"
+#include "Model.h"
+#include "PersistState.h"
 #include "Profiler.h"
-#include "RectTransform.h"
+#include "RaycastTool.h"
 #include "Renderer.h"
 #include "ReportManager.h"
 #include "SceneFunctions.h"
+#include "SceneManager.h"
 #include "Skybox.h"
 #include "SoundtrackPlayer.h"
 #include "StatusOverlay.h"
 #include "StringUtil.h"
-#include "VideoPlayer.h"
 #include "Walker.h"
 #include "WalkerBoundary.h"
 
@@ -55,18 +58,35 @@ std::string Scene::mEgoName;
     return globalAnimator;
 }
 
+/*static*/ Animator* Scene::GetActiveAnimator()
+{
+    // Use the scene animator, if it's active.
+    Scene* scene = gSceneManager.GetScene();
+    if(scene != nullptr)
+    {
+        Animator* sceneAnimator = scene->GetAnimator();
+        if(sceneAnimator != nullptr && sceneAnimator->IsActiveAndEnabled())
+        {
+            return sceneAnimator;
+        }
+    }
+
+    // Otherwise, fall back on global animator.
+    return GetGlobalAnimator();
+}
+
 Scene::Scene(const std::string& name) :
     mLocation(name),
     mTimeblock(gGameProgress.GetTimeblock())
 {
     mLayer.SetScene(this);
 
-	// Create game camera.
-	mCamera = new GameCamera();
+    // Create game camera.
+    mCamera = new GameCamera();
 
-	// Create animation player.
-	Actor* animationActor = new Actor("Animator");
-	mAnimator = animationActor->AddComponent<Animator>();
+    // Create animation player.
+    Actor* animationActor = new Actor("Animator");
+    mAnimator = animationActor->AddComponent<Animator>();
 
     // Scene layer is now active!
     gLayerManager.PushLayer(&mLayer);
@@ -81,22 +101,22 @@ Scene::~Scene()
     }
 
     // Unload the scene if it wasn't done manually before deleting the scene.
-	if(mSceneData != nullptr)
-	{
-		Unload();
-	}
+    if(mSceneData != nullptr)
+    {
+        Unload();
+    }
 }
 
 void Scene::Load()
 {
     TIMER_SCOPED("Scene::Load");
 
-	// If this is true, we are calling load when scene is already loaded!
-	if(mSceneData != nullptr)
-	{
-		//TODO: Ignore for now, but maybe we should Unload and then re-Load?
-		return;
-	}
+    // If this is true, we are calling load when scene is already loaded!
+    if(mSceneData != nullptr)
+    {
+        //TODO: Ignore for now, but maybe we should Unload and then re-Load?
+        return;
+    }
 
     // Set location.
     gLocationManager.SetLocation(mLocation);
@@ -123,30 +143,7 @@ void Scene::Load()
     {
         // NEVER spawn an ego who is not our current ego!
         if(actorDef->ego && actorDef != mEgoSceneActor) { continue; }
-
-        // Create actor.
-        GKActor* actor = new GKActor(actorDef);
-        mActors.push_back(actor);
-        mPropsAndActors.push_back(actor);
-
-        // If this is ego, save a reference to it.
-        if(actorDef->ego && actorDef == mEgoSceneActor)
-        {
-            mEgo = actor;
-        }
-
-        // Create DOR prop, if one exists for this actor.
-        // The DOR model assists with calculating an actor's facing direction, particularly while walking.
-        Model* walkerDorModel = gAssetManager.LoadModel("DOR_" + actor->GetMeshRenderer()->GetModelName());
-        if(walkerDorModel != nullptr)
-        {
-            GKProp* walkerDOR = new GKProp(walkerDorModel);
-            actor->SetModelFacingHelper(walkerDOR);
-            mPropsAndActors.push_back(walkerDOR);
-
-            // Disable DOR mesh renderer so you can't see the placeholder model.
-            walkerDOR->GetMeshRenderer()->SetEnabled(false);
-        }
+        CreateSceneActor(actorDef);
     }
 
     // Iterate over scene model data and prep the scene.
@@ -155,83 +152,18 @@ void Scene::Load()
     const std::vector<const SceneModel*>& sceneModelDatas = mSceneData->GetModels();
     for(auto& modelDef : sceneModelDatas)
     {
-        switch(modelDef->type)
-        {
-        // "Scene" type models are ones that are baked into the BSP geometry.
-        case SceneModel::Type::Scene:
-        {
-            BSPActor* actor = mSceneData->GetBSP()->CreateBSPActor(modelDef->name);
-            if(actor == nullptr) { break; }
-            mBSPActors.push_back(actor);
-
-            actor->SetNoun(modelDef->noun);
-            actor->SetVerb(modelDef->verb);
-
-            // If it should be hidden by default, tell the BSP to hide it.
-            if(modelDef->hidden)
-            {
-                actor->SetActive(false);
-            }
-            break;
-        }
-
-        // "HitTest" type models should be hidden, but still interactive.
-        case SceneModel::Type::HitTest:
-        {
-            // if this is a skybox hit test, it requires special processing.
-            if(StringUtil::StartsWithIgnoreCase(modelDef->name, "skybox_"))
-            {
-                GKObject* obj = new GKObject();
-                obj->SetNoun(modelDef->noun);
-
-                uint8_t paletteIndex = static_cast<uint8_t>(StringUtil::ToInt(modelDef->name.substr(7)));
-                mSkyboxHitTests[paletteIndex] = obj;
-            }
-            else
-            {
-                // Otherwise, this hit test should be in the BSP.
-                BSPActor* actor = mSceneData->GetBSP()->CreateBSPActor(modelDef->name);
-                if(actor == nullptr) { break; }
-
-                mBSPActors.push_back(actor);
-                mHitTestActors.push_back(actor);
-
-                actor->SetNoun(modelDef->noun);
-                actor->SetVerb(modelDef->verb);
-
-                mSceneData->GetBSP()->SetHitTest(modelDef->name, true);
-
-                // Hit test actors are never *visible* (unless you enable a debug option).
-                actor->SetVisible(false);
-
-                // However, if hidden flag is true, it also means the actor is not interactable.
-                if(modelDef->hidden)
-                {
-                    actor->SetInteractive(false);
-                }
-            }
-            break;
-        }
-
-        // "Prop" and "GasProp" models both render their own model geometry.
-        // Only difference for a "GasProp" is that it uses a provided Gas file too.
-        case SceneModel::Type::Prop:
-        case SceneModel::Type::GasProp:
-        {
-            GKProp* prop = new GKProp(*modelDef);
-            mProps.push_back(prop);
-            mPropsAndActors.push_back(prop);
-            break;
-        }
-
-        default:
-            std::cout << "Unaccounted for model type: " << (int)modelDef->type << std::endl;
-            break;
-        }
+        CreateSceneModel(modelDef);
     }
 
-    // Init construction system.
-    mConstruction.Init(this, mSceneData);
+    // Create actors to represent positions in the scene.
+    // This is just for debug purposes - no use in the final game.
+    const std::vector<const ScenePosition*>& scenePositions = mSceneData->GetScenePositions();
+    for(auto& scenePosition : scenePositions)
+    {
+        Actor* actor = new Actor(scenePosition->label);
+        actor->SetPosition(scenePosition->position);
+        actor->SetRotation(scenePosition->heading.ToQuaternion());
+    }
 }
 
 void Scene::Unload()
@@ -245,25 +177,23 @@ void Scene::Unload()
         mSoundtrackPlayer->Stop(soundtrack, true);
     }
 
-    // Clear scene assets used in renderer/
-	gRenderer.SetBSP(nullptr);
-	gRenderer.SetSkybox(nullptr);
+    // Clear scene assets used in renderer.
+    gRenderer.SetBSP(nullptr);
+    gRenderer.SetSkybox(nullptr);
 
     // We're done with the scene data.
-	delete mSceneData;
-	mSceneData = nullptr;
+    delete mSceneData;
+    mSceneData = nullptr;
 }
 
 void Scene::Init()
 {
+    // Init construction system.
+    mConstruction.Init(this, mSceneData);
+
     // Create status overlay actor.
     // Do this after setting location so it shows the correct location!
     mStatusOverlay = new StatusOverlay();
-
-    // Increment location counter after resolving scene data.
-    // Despite SIFs sometimes doing "zero-checks," other NVC and SHP scripts typically do "one-checks".
-    // E.g. run on "1st time enter" checks count == 1.
-    gLocationManager.IncLocationCount(mEgoName, mLocation, mTimeblock);
 
     // Set BSP to be rendered.
     gRenderer.SetBSP(mSceneData->GetBSP());
@@ -276,7 +206,7 @@ void Scene::Init()
     if(defaultRoomCamera != nullptr)
     {
         mCamera->SetPosition(defaultRoomCamera->position);
-        mCamera->SetRotation(Quaternion(Vector3::UnitY, defaultRoomCamera->angle.x));
+        mCamera->SetAngle(defaultRoomCamera->angle);
     }
 
     // Force a camera update to make sure the audio listener is positioned correctly in the scene.
@@ -316,7 +246,7 @@ void Scene::Init()
             mAnimator->Sample(modelDef->initAnim, 0, modelDef->name);
         }
     }
-    
+
     // Create soundtrack player and get it playing!
     Actor* actor = new Actor("SoundtrackPlayer");
     mSoundtrackPlayer = actor->AddComponent<SoundtrackPlayer>();
@@ -327,10 +257,30 @@ void Scene::Init()
 
     // If there's an "Init" SceneFunction for this Scene, execute it.
     SceneFunctions::Execute("Init");
+}
+
+void Scene::Enter()
+{
+    // Increment location counter after resolving scene data.
+    // Despite SIFs sometimes doing "zero-checks," other NVC and SHP scripts typically do "one-checks".
+    // E.g. run on "1st time enter" checks count == 1.
+    gLocationManager.IncLocationCount(mEgoName, mLocation, mTimeblock);
 
     // Check for and run "scene enter" actions.
     gActionManager.ExecuteAction("SCENE", "ENTER");
-    
+
+    // This is a bit of a HACK, but we must update billboards after all has init'd, and scene enter functions have executed their first frames.
+    // This is in case the camera position moves, and the billboard is facing the wrong way for one frame.
+    for(auto& prop : mProps)
+    {
+        Model* model = prop->GetMeshRenderer()->GetModel();
+        if(model != nullptr && model->IsBillboard())
+        {
+            Billboard* billboard = prop->GetComponent<Billboard>();
+            billboard->LateUpdate(0.0f);
+        }
+    }
+
     // Make sure light colors are applied to all actors correctly before our first render.
     // Doing this here avoids a 1-frame render with bad lighting. Do this after SCENE/ENTER action executes, since that may change actor positions.
     ApplyAmbientLightColorToActors();
@@ -338,6 +288,7 @@ void Scene::Init()
 
 void Scene::Update(float deltaTime)
 {
+    RaycastTool::StartFrame();
     if(mPaused) { return; }
 
     //TEMP: for debug visualization of BSP ambient light sources.
@@ -371,82 +322,73 @@ void Scene::Update(float deltaTime)
 
 bool Scene::InitEgoPosition(const std::string& positionName)
 {
-	if(mEgo == nullptr) { return false; }
+    if(mEgo == nullptr) { return false; }
 
-	// Get position.
+    // Get position.
     const ScenePosition* position = GetPosition(positionName);
-	if(position == nullptr) { return false; }
+    if(position == nullptr) { return false; }
 
     // Set position and heading.
-    mEgo->SetPosition(position->position);
-    mEgo->SetHeading(position->heading);
-    mEgo->SnapToFloor();
+    mEgo->InitPosition(position);
 
-	// Should also set camera position/angle.
-	// Output a warning if specified position has no camera though.
-	if(position->cameraName.empty())
-	{
-		gReportManager.Log("Warning", "No camera information is supplied in position '" + positionName + "'.");
-		return true;
-	}
+    // Should also set camera position/angle.
+    // Output a warning if specified position has no camera though.
+    if(position->cameraName.empty())
+    {
+        gReportManager.Log("Warning", "No camera information is supplied in position '" + positionName + "'.");
+        return true;
+    }
 
-	// Move the camera to desired position/angle.
-	SetCameraPosition(position->cameraName);
-	return true;
+    // Move the camera to desired position/angle.
+    SetCameraPosition(position->cameraName);
+    return true;
 }
 
 void Scene::SetCameraPosition(const std::string& cameraName)
 {
-	// Find camera or fail. Any *named* camera type is valid.
-	const SceneCamera* camera = mSceneData->GetRoomCamera(cameraName);
-	if(camera == nullptr)
-	{
-		camera = mSceneData->GetCinematicCamera(cameraName);
-		if(camera == nullptr)
-		{
-			camera = mSceneData->GetDialogueCamera(cameraName);
-		}
-	}
+    // Find camera or fail. Any *named* camera type is valid.
+    const SceneCamera* camera = mSceneData->GetAnyCameraWithName(cameraName);
 
-	// If couldn't find a camera with this name, error out!
-	if(camera == nullptr)
-	{
-		gReportManager.Log("Error", "Error: '" + cameraName + "' is not a valid room camera.");
-		return;
-	}
+    // If couldn't find a camera with this name, error out!
+    if(camera == nullptr)
+    {
+        gReportManager.Log("Error", "Error: '" + cameraName + "' is not a valid room camera.");
+        return;
+    }
 
-	// Set position/angle.
-	mCamera->SetPosition(camera->position);
-	mCamera->SetAngle(camera->angle);
-    mCamera->GetCamera()->SetCameraFovDegrees(camera->fov);
-}
-
-void Scene::SetCameraPositionForConversation(const std::string& conversationName, bool isInitial)
-{
-    // Get dialogue camera associated with this conversation, either initial or final.
-    const DialogueSceneCamera* camera = isInitial ?
-        mSceneData->GetInitialDialogueCameraForConversation(conversationName) :
-        mSceneData->GetFinalDialogueCameraForConversation(conversationName);
-    if(camera == nullptr) { return; }
-
-    // Set camera if we found it.
+    // Set position/angle.
     mCamera->SetPosition(camera->position);
     mCamera->SetAngle(camera->angle);
     mCamera->GetCamera()->SetCameraFovDegrees(camera->fov);
 }
 
+void Scene::SetCameraPositionForConversation(const std::string& conversationName, bool isInitial)
+{
+    // Get the dialogue camera associated with this conversation.
+    // If this is initial (e.g. entering the conversation), try to use an initial camera, but fall back on final camera if initial camera doesn't exist (matches original game).
+    const DialogueSceneCamera* camera = nullptr;
+    if(isInitial)
+    {
+        camera = mSceneData->GetInitialDialogueCameraForConversation(conversationName);
+    }
+    if(camera == nullptr)
+    {
+        camera = mSceneData->GetFinalDialogueCameraForConversation(conversationName);
+    }
+
+    // Set camera if we found it.
+    if(camera != nullptr)
+    {
+        mCamera->SetPosition(camera->position);
+        mCamera->SetAngle(camera->angle);
+        mCamera->GetCamera()->SetCameraFovDegrees(camera->fov);
+    }
+}
+
 void Scene::GlideToCameraPosition(const std::string& cameraName, std::function<void()> finishCallback)
 {
     // Find camera or fail. Any *named* camera type is valid.
-    const SceneCamera* camera = mSceneData->GetRoomCamera(cameraName);
-    if(camera == nullptr)
-    {
-        camera = mSceneData->GetCinematicCamera(cameraName);
-        if(camera == nullptr)
-        {
-            camera = mSceneData->GetDialogueCamera(cameraName);
-        }
-    }
+    const SceneCamera* camera = mSceneData->GetAnyCameraWithName(cameraName);
 
     // If couldn't find a camera with this name, error out!
     if(camera == nullptr)
@@ -482,7 +424,7 @@ namespace
 
 SceneCastResult Scene::Raycast(const Ray& ray, bool interactiveOnly, GKObject** ignore, int ignoreCount) const
 {
-	// First, iterate all Props and Actors to find the closest one that was hit by the ray and meets our criteria (if any).
+    // First, iterate all Props and Actors to find the closest one that was hit by the ray and meets our criteria (if any).
     SceneCastResult result;
     for(GKObject* object : mPropsAndActors)
     {
@@ -497,6 +439,9 @@ SceneCastResult Scene::Raycast(const Ray& ray, bool interactiveOnly, GKObject** 
         MeshRenderer* meshRenderer = object->GetMeshRenderer();
         if(meshRenderer != nullptr && meshRenderer->Raycast(ray, hitInfo))
         {
+            hitInfo.name = object->GetNoun();
+            RaycastTool::LogRaycastHit(hitInfo);
+
             // We did hit the 3D model, but is it closer than anything else we've hit thus far?
             if(hitInfo.t < result.hitInfo.t)
             {
@@ -520,13 +465,13 @@ SceneCastResult Scene::Raycast(const Ray& ray, bool interactiveOnly, GKObject** 
 
     // The raycast logic for Actors/Props doesn't automatically fill in the HitInfo name field.
     // So, if something was hit, do that now.
-	if(result.hitObject != nullptr)
-	{
-		result.hitInfo.name = result.hitObject->GetNoun();
-	}
+    if(result.hitObject != nullptr)
+    {
+        result.hitInfo.name = result.hitObject->GetNoun();
+    }
 
     // AT THIS POINT: we may or may not have hit a Prop or Actor with our ray. But now we need to see if any BSP geometry is closer.
-    
+
     // Raycast against all BSP.
     RaycastHit bspHitInfo;
     if(GetBSP()->RaycastNearest(ray, bspHitInfo) && bspHitInfo.t < result.hitInfo.t)
@@ -593,7 +538,7 @@ SceneCastResult Scene::Raycast(const Ray& ray, bool interactiveOnly, GKObject** 
         Debug::DrawSphere(Sphere(ray.GetPoint(result.hitInfo.t - 0.1f), 1.0f), Color32::Red);
     }
     */
-	return result;
+    return result;
 }
 
 SceneCastResult Scene::RaycastAABBs(const Ray& ray, GKObject** ignore, int ignoreCount) const
@@ -619,93 +564,99 @@ SceneCastResult Scene::RaycastAABBs(const Ray& ray, GKObject** ignore, int ignor
         }
     }
 
-    // Raycast against all BSP.
-    for(BSPActor* object : mBSPActors)
-    {
-        // Ignore inactive objects.
-        if(!object->IsActive()) { continue; }
-
-        // Completely ignore anything in the ignore list. It doesn't exist to us.
-        if(IsInIgnoreList(ignore, ignoreCount, object)) { continue; }
-
-        float t;
-        if(Intersect::TestRayAABB(ray, object->GetAABB(), t))
-        {
-            if(t < result.hitInfo.t)
-            {
-                result.hitObject = object;
-                result.hitInfo.t = t;
-            }
-        }
-    }
-
     if(result.hitObject != nullptr)
     {
-        result.hitInfo.name = result.hitObject->GetNoun();
-        result.hitInfo.actor = result.hitObject;
+        // If an object was hit, we should still check the BSP in general to see if some geometry is obscuring the object.
+        RaycastHit bspHitInfo;
+        if(GetBSP()->RaycastNearest(ray, bspHitInfo) && bspHitInfo.t < result.hitInfo.t)
+        {
+            result.hitObject = nullptr;
+            result.hitInfo = bspHitInfo;
+        }
+        else
+        {
+            // If no BSP is in the way, fill in that we definitely hit an object with the raycast.
+            result.hitInfo.name = result.hitObject->GetNoun();
+            result.hitInfo.actor = result.hitObject;
+        }
     }
     return result;
 }
 
 void Scene::Interact(const Ray& ray, GKObject* interactHint)
 {
-	// Ignore scene interaction while the action bar is showing.
-	if(gActionManager.IsActionBarShowing()) { return; }
+    // Ignore scene interaction while the action bar is showing.
+    if(gActionManager.IsActionBarShowing()) { return; }
 
-	// Also ignore scene interaction when inventory is up.
-	if(gInventoryManager.IsInventoryShowing()) { return; }
+    // Also ignore scene interaction when inventory is up.
+    if(gInventoryManager.IsInventoryShowing()) { return; }
 
-	// Get interacted object.
-	GKObject* interacted = interactHint;
-	if(interacted == nullptr)
-	{
-		SceneCastResult result = Raycast(ray, true);
-		interacted = result.hitObject;
-	}
+    // Get interacted object.
+    GKObject* interacted = interactHint;
+    if(interacted == nullptr)
+    {
+        SceneCastResult result = Raycast(ray, true);
+        interacted = result.hitObject;
+    }
 
-	// If interacted object is null, see if we hit the floor, in which case we want to walk.
-	if(interacted == nullptr)
-	{
+    // If interacted object is null, see if we hit the floor, in which case we want to walk.
+    if(interacted == nullptr)
+    {
         BSP* bsp = GetBSP();
-		if(bsp != nullptr)
-		{
-			// Cast ray against scene BSP to see if it intersects with anything.
-			// If so, it means we clicked on that thing.
-			RaycastHit hitInfo;
-			if(bsp->RaycastNearest(ray, hitInfo, true))
-			{
-				// Clicked on the floor - move ego to position.
-				if(StringUtil::EqualsIgnoreCase(hitInfo.name, mSceneData->GetFloorModelName()))
-				{
-					// Check walker boundary to see whether we can walk to this spot.
-					mEgo->WalkTo(ray.GetPoint(hitInfo.t), nullptr);
-				}
-			}
-		}
-		return;
-	}
+        if(bsp != nullptr)
+        {
+            // Cast ray against scene BSP to see if it intersects with anything.
+            // If so, it means we clicked on that thing.
+            RaycastHit hitInfo;
+            if(bsp->RaycastNearest(ray, hitInfo, true))
+            {
+                // Clicked on the floor - move ego to position.
+                if(StringUtil::EqualsIgnoreCase(hitInfo.name, mSceneData->GetFloorModelName()))
+                {
+                    // 99% of the time, we want the normal walk behavior.
+                    // In one scene (the final showdown with Montreaux) we need custom walk behavior of course.
+                    if(mWalkOverrideCallback != nullptr)
+                    {
+                        mWalkOverrideCallback();
+                    }
+                    else
+                    {
+                        // When the player clicks somewhere on the floor, we try to walk to that spot.
+                        // However, we don't want to allow walking to unwalkable spots. So first find the nearest walkable spot on the walker boundary.
+                        Vector3 walkPos = mSceneData->GetWalkerBoundary()->FindNearestWalkablePosition(ray.GetPoint(hitInfo.t));
+
+                        // Attempt to walk to the clicked position.
+                        // It's 99% likely that a path exists to the walk pos, and the walk will succeed.
+                        // The only edge case is if the walk pos clicked is on an isolated subsection of the walker boundary, in which case ego will walk as close as possible before giving up.
+                        mEgo->WalkToBestEffort(walkPos, Heading::None, nullptr);
+                    }
+                }
+            }
+        }
+        return;
+    }
 
     // Looks like we're interacting with something interesting.
     mActiveObject = interacted;
 
-	// We've got an object to interact with!
-	// See if it has a pre-defined verb with an associated action. If so, we will immediately execute that action (w/o showing action bar).
-	if(!interacted->GetVerb().empty())
-	{
+    // We've got an object to interact with!
+    // See if it has a pre-defined verb with an associated action. If so, we will immediately execute that action (w/o showing action bar).
+    if(!interacted->GetVerb().empty())
+    {
         const Action* action = gActionManager.GetAction(interacted->GetNoun(), interacted->GetVerb());
         if(action != nullptr)
         {
             ExecuteAction(action);
             return;
         }
-	}
+    }
 
-	// No pre-defined verb OR no action for that noun/verb combo - try to show action bar.
-	gActionManager.ShowActionBar(interacted->GetNoun(), std::bind(&Scene::ExecuteAction, this, std::placeholders::_1));
-    ActionBar* actionBar = gActionManager.GetActionBar();
+    // No pre-defined verb OR no action for that noun/verb combo - try to show action bar.
+    gActionManager.ShowActionBar(interacted->GetNoun(), true, std::bind(&Scene::ExecuteAction, this, std::placeholders::_1));
 
     // Add INSPECT/UNINSPECT if not present.
     bool alreadyInspecting = StringUtil::EqualsIgnoreCase(interacted->GetNoun(), mCamera->GetInspectNoun());
+    ActionBar* actionBar = gActionManager.GetActionBar();
     if(alreadyInspecting)
     {
         if(!actionBar->HasVerb("INSPECT_UNDO"))
@@ -715,6 +666,10 @@ void Scene::Interact(const Ray& ray, GKObject* interactHint)
             });
             actionBar->SetVerbEnabled("INSPECT_UNDO", !mCamera->IsForcedCinematicMode());
         }
+
+        // It's possible for INSPECT to be in the bar already, if it was a verb listed in NVC.
+        // If so, we should remove it in this case - it's weird to have both INSPECT and INSPECT_UNDO options.
+        actionBar->RemoveVerb("INSPECT");
     }
     else
     {
@@ -725,17 +680,14 @@ void Scene::Interact(const Ray& ray, GKObject* interactHint)
             });
             actionBar->SetVerbEnabled("INSPECT", !mCamera->IsForcedCinematicMode());
         }
+
+        // Similar to above, we shouldn't have both INSPECT and INSPECT_UNDO active at the same time.
+        actionBar->RemoveVerb("INSPECT_UNDO");
     }
 }
 
 void Scene::SkipCurrentAction()
 {
-    if(gVideoPlayer.IsPlaying())
-    {
-        gVideoPlayer.Stop();
-        return;
-    }
-
     // If an action is playing, this should skip the action.
     if(gActionManager.IsActionPlaying() && !gActionManager.IsSkippingCurrentAction())
     {
@@ -743,10 +695,15 @@ void Scene::SkipCurrentAction()
         return;
     }
 
-    // If no action, but ego is walking, this can skip the walk.
-    if(mEgo != nullptr && mEgo->GetWalker()->IsWalking())
+    // If no action, do walk skip. This skips all walking actors (ego or otherwise) to the end of their current walk.
+    // Side note: for the longest time, I thought this only skips Ego's walk. But it actually skips ALL walker walks!
+    // Even if Ego is not walking, and other characters are, their walks get skipped.
+    for(GKActor* actor : mActors)
     {
-        mEgo->GetWalker()->SkipToEnd();
+        if(actor->GetWalker()->IsWalking())
+        {
+            actor->GetWalker()->SkipToEnd();
+        }
     }
 }
 
@@ -773,21 +730,14 @@ BSPActor* Scene::GetHitTestObjectByModelName(const std::string& modelName) const
 
 GKObject* Scene::GetSceneObjectByModelName(const std::string& modelName) const
 {
-	for(auto& object : mPropsAndActors)
-	{
-        if(StringUtil::EqualsIgnoreCase(object->GetName(), modelName))
-        {
-            return object;
-        }
-	}
-    for(auto& object : mBSPActors)
+    for(auto& object : mPropsAndActors)
     {
         if(StringUtil::EqualsIgnoreCase(object->GetName(), modelName))
         {
             return object;
         }
     }
-	return nullptr;
+    return nullptr;
 }
 
 GKProp* Scene::GetPropByModelName(const std::string& modelName) const
@@ -811,13 +761,6 @@ GKObject* Scene::GetSceneObjectByNoun(const std::string& noun) const
             return object;
         }
     }
-    for(auto& object : mBSPActors)
-    {
-        if(StringUtil::EqualsIgnoreCase(object->GetNoun(), noun))
-        {
-            return object;
-        }
-    }
     return nullptr;
 }
 
@@ -835,29 +778,29 @@ GKProp* Scene::GetPropByNoun(const std::string& noun) const
 
 GKActor* Scene::GetActorByNoun(const std::string& noun) const
 {
-	for(auto& actor : mActors)
-	{
-		if(StringUtil::EqualsIgnoreCase(actor->GetNoun(), noun))
-		{
-			return actor;
-		}
-	}
-	gReportManager.Log("Error", "Error: Who the hell is '" + noun + "'?");
-	return nullptr;
+    for(auto& actor : mActors)
+    {
+        if(StringUtil::EqualsIgnoreCase(actor->GetNoun(), noun))
+        {
+            return actor;
+        }
+    }
+    gReportManager.Log("Error", "Error: Who the hell is '" + noun + "'?");
+    return nullptr;
 }
 
 const ScenePosition* Scene::GetPosition(const std::string& positionName) const
 {
-	const ScenePosition* position = nullptr;
-	if(mSceneData != nullptr)
-	{
-		position = mSceneData->GetScenePosition(positionName);
-	}
-	if(position == nullptr)
-	{
-		gReportManager.Log("Error", "Error: '" + positionName + "' is not a valid position. Call DumpPositions() to see valid positions.");
-	}
-	return position;
+    const ScenePosition* position = nullptr;
+    if(mSceneData != nullptr)
+    {
+        position = mSceneData->GetScenePosition(positionName);
+    }
+    if(position == nullptr)
+    {
+        gReportManager.Log("Error", "Error: '" + positionName + "' is not a valid position. Call DumpPositions() to see valid positions.");
+    }
+    return position;
 }
 
 float Scene::GetFloorY(const Vector3& position) const
@@ -908,12 +851,12 @@ void Scene::SetSceneModelVisibility(const std::string& modelName, bool visible)
 
 bool Scene::IsSceneModelVisible(const std::string& modelName) const
 {
-	return GetBSP()->IsVisible(modelName);
+    return GetBSP()->IsVisible(modelName);
 }
 
 bool Scene::DoesSceneModelExist(const std::string& modelName) const
 {
-	return GetBSP()->Exists(modelName);
+    return GetBSP()->Exists(modelName);
 }
 
 void Scene::SetFixedModelLighting(const std::string& modelName, const Color32& color)
@@ -939,12 +882,10 @@ void Scene::SetPaused(bool paused)
     //TODO: You might expect that pausing the animator is necessary to effectively pause the scene.
     //TODO: However, doing so can break actions in inventory, since voice over actions rely on the Animator.
     //TODO: Not pausing animator seems to work fine for now, but if it's a problem later on, maybe we need to have a separate animator for non-scene stuff or something.
-    /*
     if(mAnimator != nullptr)
     {
         mAnimator->SetEnabled(!paused);
     }
-    */
 
     // Tell camera if the scene is active or not.
     // We don't want to set camera inactive, because we still want it to render.
@@ -969,7 +910,7 @@ void Scene::SetPaused(bool paused)
     }
 }
 
-void Scene::InspectActiveObject(std::function<void()> finishCallback)
+void Scene::InspectActiveObject(const std::function<void()>& finishCallback)
 {
     // We need an active object, for one.
     if(mActiveObject == nullptr)
@@ -985,7 +926,7 @@ void Scene::InspectActiveObject(std::function<void()> finishCallback)
     InspectObject(mActiveObject->GetNoun(), finishCallback);
 }
 
-void Scene::InspectObject(const std::string& noun, std::function<void()> finishCallback)
+void Scene::InspectObject(const std::string& noun, const std::function<void()>& finishCallback)
 {
     // Try to get inspect camera for this noun.
     const SceneCamera* inspectCamera = mSceneData->GetInspectCamera(noun);
@@ -1007,78 +948,394 @@ void Scene::InspectObject(const std::string& noun, std::function<void()> finishC
             }
         }
     }
+    InspectObject(noun, inspectCamera, finishCallback);
+}
 
+void Scene::InspectObject(const std::string& noun, const std::string& cameraName, const std::function<void()>& finishCallback)
+{
+    InspectObject(noun, mSceneData->GetAnyCameraWithName(cameraName), finishCallback);
+}
+
+void Scene::InspectObject(const std::string& noun, const SceneCamera* camera, const std::function<void()>& finishCallback)
+{
     // After all that, if we have an inspect camera, use it!
-    if(inspectCamera != nullptr)
+    if(camera != nullptr)
     {
-        mCamera->Inspect(noun, inspectCamera->position, inspectCamera->angle, finishCallback);
+        mCamera->Inspect(noun, camera->position, camera->angle, finishCallback);
     }
     else // No inspect camera for this noun
     {
-        // This does actually happen for dynamic objects (like any humanoid/walker).
-        // So, we need to support this. Find an inspect position on-the-fly!
-        bool foundActor = false;
-        for(GKActor* actor : mActors)
+        // All moving objects (particularly humanoids/walkers) don't have a set inspect camera. But you can still inspect!
+        // In these cases, the game finds a decent position/angle for the inspect camera on-the-fly.
+
+        // First, find the object.
+        GKObject* obj = GetSceneObjectByNoun(noun);
+        if(obj == nullptr)
         {
-            if(StringUtil::EqualsIgnoreCase(actor->GetNoun(), noun))
+            if(finishCallback != nullptr)
             {
-                // For starters, at head level, looking toward them sounds reasonable.
-                Vector3 facing = actor->GetForward();
-                Vector3 inspectPos = actor->GetHeadPosition() + facing * 50.0f;
-
-                float yaw = Heading::FromDirection(-facing).ToRadians();
-                Vector2 inspectAngle(yaw, 0.0f);
-
-                //TODO: If the actor is facing a wall or something, it's pretty likely the camera will go out-of-bounds.
-                //TODO: The original game seems to check this and move the camera around to a valid spot on the sides/back.
-
-                // Use the calculated inspect position and angle.
-                mCamera->Inspect(noun, inspectPos, inspectAngle, finishCallback);
-                foundActor = true;
-                break;
+                finishCallback();
             }
+            return;
         }
 
-        // Worst case, there's no inspect camera for this thing, so let's give up!
-        if(!foundActor && finishCallback != nullptr)
+        // We need to figure out the best inspect camera position and camera angle for this object.
+        Vector3 inspectPosition;
+        Vector2 inspectAngle;
+
+        // For GKActors, the game tries to look at the character's face.
+        const float kInspectPositionDistance = 50.0f;
+        if(obj->IsA<GKActor>())
         {
-            finishCallback();
+            GKActor* actor = static_cast<GKActor*>(obj);
+
+            // Get position X units in front of their head.
+            Vector3 facing = actor->GetForward();
+            inspectPosition = actor->GetHeadPosition() + facing * kInspectPositionDistance;
+
+            // Set angle such that we're looking at the head.
+            inspectAngle.x = Heading::FromDirection(-facing).ToRadians();
         }
+        else
+        {
+            // Calculate the camera distance
+            AABB aabb = obj->GetAABB();
+            Vector3 aabbSize = aabb.GetSize();
+            float largestSize = Math::Max(aabbSize.z, Math::Max(aabbSize.x, aabbSize.y));
+            float distance = Math::Abs(largestSize / Math::Sin(mCamera->GetCamera()->GetCameraFovRadians()));
+
+            // If the camera moved in a straight line from here to the object, find a point along that line to stop at.
+            Vector3 objToCameraDir = Vector3::Normalize(mCamera->GetPosition() - aabb.GetCenter());
+            inspectPosition = aabb.GetCenter() + objToCameraDir * distance;
+
+            // Set angle such that we're looking at the thing.
+            inspectAngle.x = Heading::FromDirection(-objToCameraDir).ToRadians();
+            inspectAngle.y = Math::Asin(objToCameraDir.y);
+        }
+
+        // Move the camera to that position/angle to inspect.
+        mCamera->Inspect(noun, inspectPosition, inspectAngle, finishCallback);
     }
 }
 
-void Scene::UninspectObject(std::function<void()> finishCallback)
+void Scene::UninspectObject(const std::function<void()>& finishCallback)
 {
     mCamera->Uninspect(finishCallback);
 }
 
-void Scene::SetOverrideBSP(BSP* bsp)
+void Scene::OverrideSceneAsset(const std::string& sceneAssetName, const std::string& floorModelName)
 {
-    // Store override BSP.
-    mOverrideBSP = bsp;
+    // Save the override scene asset name.
+    mOverrideSceneName = sceneAssetName;
 
-    // Change BSP rendered by renderer.
-    gRenderer.SetBSP(bsp);
+    // Load scene geometry based on asset name.
+    SceneGeometryData geometryData;
+    geometryData.Load(sceneAssetName);
 
-    // In some cases, the override BSP is a different variant of the current scene, but with the same hit tests present (e.g. CEM in Day 1, 6PM).
-    // In those cases, we need to re-enable the hit tests in the new scene, or else certain scene interactions may not work.
+    // If there's BSP, use it!
+    mOverrideBSP = geometryData.GetBSP();
     if(mOverrideBSP != nullptr)
     {
+        // Make sure floor model name is set correctly.
+        // This is important so walkers know what to consider floor height, and for clicking to walk.
+        if(!floorModelName.empty())
+        {
+            mOverrideBSP->SetFloorObjectName(floorModelName);
+        }
+        else
+        {
+            mOverrideBSP->SetFloorObjectName(mSceneData->GetFloorModelName());
+        }
+
+        // In some cases, the BSP is a different variant of the current scene, but with the same hit tests present (e.g. CEM in Day 1, 6PM).
+        // In those cases, we need to re-enable the hit tests in the new scene, or else certain scene interactions may not work.
         for(BSPActor* hitTest : mHitTestActors)
         {
             mOverrideBSP->SetVisible(hitTest->GetName(), false);
             mOverrideBSP->SetHitTest(hitTest->GetName(), true);
         }
+
+        // Use this BSP to render instead.
+        gRenderer.SetBSP(mOverrideBSP);
     }
 }
 
-void Scene::ClearOverrideBSP()
+void Scene::ClearSceneAssetOverride()
 {
-    // Clear override BSP.
+    // Clear the overridden scene name and revert back to the original scene data's BSP.
+    mOverrideSceneName.clear();
     mOverrideBSP = nullptr;
+    gRenderer.SetBSP(mSceneData->GetBSP());
+}
 
-    // Revert to rendering the original scene's BSP.
-    gRenderer.SetBSP(mSceneData != nullptr ? mSceneData->GetBSP() : nullptr);
+void Scene::OnPersist(PersistState& ps)
+{
+    // Scene data save/load was introduced in format version 4, so early out if this is older save data.
+    if(ps.GetFormatVersionNumber() < 4) { return; }
+
+    // DISCLAIMER & WARNING!
+    // This save/load code is very different from the original game (see PERSISTENCE.DOC).
+    // The original game used a very generalized save solution. I hoped to replicate it, but it was a very complex undertaking.
+    // Maybe someday that can happen, but for now, this save code is much more targeted. And our requirements are different from the original devs:
+    // 1) The original devs may have been developing a save system to be used by many future games. This one is only for GK3.
+    // 2) The original devs needed a save system that worked with a game under active development. This one is only for a final product.
+
+    // This code makes several assumptions:
+    // 1) Scene::Load and Scene::Init have already completed for the current scene.
+    // 2) Certain objects (camera, BSP, soundtrack player, etc) definitely exist in their initial states.
+    // 3) Particularly when loading: the exact same set of objects present at save time exist.
+    //    This is a big one! Any change to SIF or dynamically spawned objects will likely break the save in some way.
+
+    // Save/load the game camera. This includes camera position, pitch/yaw, and other state data.
+    mCamera->OnPersist(ps);
+
+    // Save/load playing soundtracks.
+    // This is most important for scenes that change their music mid-way through the scene (Montreaux's office for example).
+    mSoundtrackPlayer->OnPersist(ps);
+
+    // Save/load BSP state.
+    // Needed because BSP textures/visibility sometimes change during a scene.
+    mSceneData->GetBSP()->OnPersist(ps);
+
+    // Save/load any override scene name.
+    ps.Xfer(PERSIST_VAR(mOverrideSceneName));
+
+    // Need to save/load walker boundary to remember changes to walkable regions that may occur during a scene.
+    mSceneData->GetWalkerBoundary()->OnPersist(ps);
+
+    // We don't care about 99% of overlays because the game doesn't let you save during them.
+    // One exception is the GPS. This ensures that the GPS is visible if you save when it is showing.
+    GPSOverlay::OnPersist(ps);
+
+    //TODO: Should we restore Sidney state, if you save inside Sidney? YES!
+
+    // On rare occasions (Hexagram Puzzle), the scene Ego may change. So, we need to save this too.
+    std::string egoNoun = mEgo != nullptr ? mEgo->GetNoun() : "";
+    ps.Xfer(PERSIST_VAR(egoNoun));
+    if(ps.IsLoading())
+    {
+        mEgo = GetActorByNoun(egoNoun);
+    }
+
+    // SAVE/LOAD GKOBJECTS
+    // Get object count.
+    uint64_t objectCount = mPropsAndActors.size();
+    ps.Xfer(PERSIST_VAR(objectCount));
+
+    // Iterate each scene object, one by one.
+    for(uint64_t i = 0; i < objectCount; ++i)
+    {
+        // If we're saving, just save this actor's data out - easy!
+        if(ps.IsSaving())
+        {
+            // Save the object name.
+            std::string name = mPropsAndActors[i]->GetName();
+            ps.Xfer(PERSIST_VAR(name));
+            //printf("Save %i (%s)\n", static_cast<int>(i), name.c_str());
+
+            // Save the object type.
+            TypeId objType = mPropsAndActors[i]->GetTypeId();
+            ps.Xfer(PERSIST_VAR(objType));
+
+            // Before saving the object data, write out a placeholder int.
+            // We'll come back later and fill this in with the object size.
+            uint32_t objSizePos = ps.GetBinaryWriter()->GetPosition();
+            ps.GetBinaryWriter()->WriteUInt(0);
+            uint32_t objDataStartPos = ps.GetBinaryWriter()->GetPosition();
+
+            // Save the object.
+            mPropsAndActors[i]->OnPersist(ps);
+
+            // Go back and fill in the object size.
+            uint32_t objDataEndPos = ps.GetBinaryWriter()->GetPosition();
+            ps.GetBinaryWriter()->Seek(objSizePos);
+            ps.GetBinaryWriter()->WriteInt(objDataEndPos - objDataStartPos);
+            ps.GetBinaryWriter()->Seek(objDataEndPos);
+        }
+        else
+        {
+            // Read the object name.
+            std::string name;
+            ps.Xfer(PERSIST_VAR(name));
+            //printf("Load %i (%s)\n", static_cast<int>(i), name.c_str());
+
+            // Read the object type.
+            TypeId objType = INVALID_TYPE_ID;
+            ps.Xfer(PERSIST_VAR(objType));
+
+            // Read the object size.
+            uint32_t objSize = ps.GetBinaryReader()->ReadUInt();
+
+            // If loading, we need to find the object with the specified name first.
+            GKObject* object = GetSceneObjectByModelName(name);
+
+            // If the object exists, but the type is different than what was saved, we have to skip it.
+            // This can happen sometimes, if an object switches from a dynamic prop to static BSP based on scene load conditions.
+            if(object != nullptr && object->GetTypeId() != objType)
+            {
+                printf("Type mismatch for object %s - skipping.\n", name.c_str());
+                ps.GetBinaryReader()->Skip(objSize);
+            }
+            else if(object == nullptr) // can't find the object - can maybe recover
+            {
+                // It's possible that this object was not loaded due to the current game state. A good example:
+                // 1) When you first meet Mosely, the kitchen door is spawned as a dynamic prop to support the cutscene (and the bsp version is hidden).
+                // 2) If you save, the dynamic kitchen door prop is in the save data, and the bsp version is hidden in the save data.
+                // 3) On load, since you already met Mosely, the dynamic door prop is not loaded. But the BSP version is also hidden. No kitchen door appears!
+                // To get around this, we should try to spawn objects present in the save data if we can't find them in the loaded scene.
+                const SceneModel* sceneModel = mSceneData->FindSceneModelForLoad(name);
+                if(sceneModel != nullptr)
+                {
+                    GKObject* newObj = CreateSceneModel(sceneModel);
+                    newObj->OnPersist(ps);
+                }
+                else
+                {
+                    const SceneActor* sceneActor = mSceneData->FindSceneActorForLoad(name);
+                    if(sceneActor != nullptr)
+                    {
+                        GKActor* newActor = CreateSceneActor(sceneActor);
+                        newActor->OnPersist(ps);
+                    }
+                    else
+                    {
+                        printf("Object %s doesn't exist in the scene and can't be spawned - skipping.\n", name.c_str());
+                        ps.GetBinaryReader()->Skip(objSize);
+                    }
+                }
+            }
+            else
+            {
+                // Load the object's state.
+                object->OnPersist(ps);
+            }
+        }
+    }
+
+    // Occasionally, special scene objects need to also save/load their state. They'll add a callback if so.
+    // Some examples: Church Angels, Montreaux Office Laser Heads, Chessboard, Pendulum, Invisible Bridge.
+    for(auto& callback : mPersistCallbacks)
+    {
+        callback(ps);
+    }
+
+    // If loading, do a final step to set any override scene.
+    // The overridden BSP inherits certain scene hittest object properties, so we want to do this AFTER all scene objects have been loaded.
+    if(ps.IsLoading())
+    {
+        if(!mOverrideSceneName.empty())
+        {
+            OverrideSceneAsset(mOverrideSceneName);
+        }
+    }
+}
+
+GKObject* Scene::CreateSceneModel(const SceneModel* sceneModel)
+{
+    switch(sceneModel->type)
+    {
+        // "Scene" type models are ones that are baked into the BSP geometry.
+        case SceneModel::Type::Scene:
+        {
+            BSPActor* actor = mSceneData->GetBSP()->CreateBSPActor(sceneModel->name);
+            if(actor == nullptr) { break; }
+            mPropsAndActors.push_back(actor);
+            mBSPActors.push_back(actor);
+
+            actor->SetNoun(sceneModel->noun);
+            actor->SetVerb(sceneModel->verb);
+
+            // If it should be hidden by default, tell the BSP to hide it.
+            if(sceneModel->hidden)
+            {
+                actor->SetActive(false);
+            }
+            return actor;
+        }
+
+        // "HitTest" type models should be hidden, but still interactive.
+        case SceneModel::Type::HitTest:
+        {
+            // if this is a skybox hit test, it requires special processing.
+            if(StringUtil::StartsWithIgnoreCase(sceneModel->name, "skybox_"))
+            {
+                GKObject* obj = new GKObject();
+                obj->SetNoun(sceneModel->noun);
+
+                uint8_t paletteIndex = static_cast<uint8_t>(StringUtil::ToInt(sceneModel->name.substr(7)));
+                mSkyboxHitTests[paletteIndex] = obj;
+                return obj;
+            }
+            else
+            {
+                // Otherwise, this hit test should be in the BSP.
+                BSPActor* actor = mSceneData->GetBSP()->CreateBSPActor(sceneModel->name);
+                if(actor == nullptr) { break; }
+                mPropsAndActors.push_back(actor);
+                mBSPActors.push_back(actor);
+                mHitTestActors.push_back(actor);
+
+                actor->SetNoun(sceneModel->noun);
+                actor->SetVerb(sceneModel->verb);
+
+                mSceneData->GetBSP()->SetHitTest(sceneModel->name, true);
+
+                // Hit test actors are never *visible* (unless you enable a debug option).
+                actor->SetVisible(false);
+
+                // However, if hidden flag is true, it also means the actor is not interactable.
+                if(sceneModel->hidden)
+                {
+                    actor->SetInteractive(false);
+                }
+                return actor;
+            }
+        }
+
+        // "Prop" and "GasProp" models both render their own model geometry.
+        // Only difference for a "GasProp" is that it uses a provided Gas file too.
+        case SceneModel::Type::Prop:
+        case SceneModel::Type::GasProp:
+        {
+            GKProp* prop = new GKProp(*sceneModel);
+            mProps.push_back(prop);
+            mPropsAndActors.push_back(prop);
+            return prop;
+        }
+
+        default:
+            std::cout << "Unaccounted for model type: " << (int)sceneModel->type << std::endl;
+            break;
+    }
+    return nullptr;
+}
+
+GKActor* Scene::CreateSceneActor(const SceneActor* sceneActor)
+{
+    // Create actor.
+    GKActor* actor = new GKActor(sceneActor);
+    mActors.push_back(actor);
+    mPropsAndActors.push_back(actor);
+
+    // If this is ego, save a reference to it.
+    if(sceneActor->ego && sceneActor == mEgoSceneActor)
+    {
+        mEgo = actor;
+    }
+
+    // Create DOR prop, if one exists for this actor.
+    // The DOR model assists with calculating an actor's facing direction, particularly while walking.
+    Model* walkerDorModel = gAssetManager.LoadModel("DOR_" + actor->GetMeshRenderer()->GetModelName());
+    if(walkerDorModel != nullptr)
+    {
+        GKProp* walkerDOR = new GKProp(walkerDorModel);
+        actor->SetModelFacingHelper(walkerDOR);
+        mPropsAndActors.push_back(walkerDOR);
+
+        // Disable DOR mesh renderer so you can't see the placeholder model.
+        walkerDOR->GetMeshRenderer()->SetEnabled(false);
+    }
+    return actor;
 }
 
 void Scene::ApplyAmbientLightColorToActors()
@@ -1106,72 +1363,82 @@ BSP* Scene::GetBSP() const
 
 void Scene::ExecuteAction(const Action* action)
 {
-	// Ignore nulls.
-	if(action == nullptr) { return; }
+    // Ignore nulls.
+    if(action == nullptr) { return; }
 
-	// Log to "Actions" stream.
-	gReportManager.Log("Actions", "Playing NVC " + action->ToString());
+    // Log to "Actions" stream.
+    gReportManager.Log("Actions", "Playing NVC " + action->ToString());
 
-	// Before executing the NVC, we need to handle any approach.
-	switch(action->approach)
-	{
-		case Action::Approach::WalkTo:
-		{
-			const ScenePosition* scenePos = mSceneData->GetScenePosition(action->target);
-			if(scenePos != nullptr)
-			{
-				//Debug::DrawLine(mEgo->GetPosition(), scenePos->position, Color32::Green, 60.0f);
-				mEgo->WalkTo(scenePos->position, scenePos->heading, [action]() -> void {
-					gActionManager.ExecuteAction(action, nullptr, false);
-				});
-			}
-			else
-			{
-				gActionManager.ExecuteAction(action, nullptr, false);
-			}
-			break;
-		}
-		case Action::Approach::Anim: // Example use: R25 Open/Close Window, Open/Close Dresser, Open/Close Drawer
-		{
-			Animation* anim = gAssetManager.LoadAnimation(action->target, AssetScope::Scene);
-			if(anim != nullptr)
-			{
-				mEgo->WalkToAnimationStart(anim, [action]() -> void {
-					gActionManager.ExecuteAction(action, nullptr, false);
-				});
-			}
-			else
-			{
-				gActionManager.ExecuteAction(action, nullptr, false);
-			}
-			break;
-		}
-		case Action::Approach::Near: // Never used in GK3.
-		{
-			std::cout << "Executed NEAR approach type!" << std::endl;
-			gActionManager.ExecuteAction(action, nullptr, false);
-			break;
-		}
-		case Action::Approach::NearModel: // Example use: RC1 Bookstore Door, Hallway R25 Door
-		{
+    // Before executing the NVC, we need to handle any approach.
+    switch(action->approach)
+    {
+        case Action::Approach::WalkTo:
+        {
+            const ScenePosition* scenePos = mSceneData->GetScenePosition(action->target);
+            if(scenePos != nullptr)
+            {
+                //Debug::DrawLine(mEgo->GetPosition(), scenePos->position, Color32::Green, 60.0f);
+                mEgo->WalkToExact(scenePos->position, scenePos->heading, [action]() {
+                    if(!gActionManager.IsActionBarShowing())
+                    {
+                        gActionManager.ExecuteAction(action, nullptr, false);
+                    }
+                });
+            }
+            else
+            {
+                gActionManager.ExecuteAction(action, nullptr, false);
+            }
+            break;
+        }
+        case Action::Approach::Anim: // Example use: R25 Open/Close Window, Open/Close Dresser, Open/Close Drawer
+        {
+            Animation* anim = gAssetManager.LoadAnimation(action->target, AssetScope::Scene);
+            if(anim != nullptr)
+            {
+                mEgo->WalkToAnimationStart(anim, [action]() {
+                    if(!gActionManager.IsActionBarShowing())
+                    {
+                        gActionManager.ExecuteAction(action, nullptr, false);
+                    }
+                });
+            }
+            else
+            {
+                gActionManager.ExecuteAction(action, nullptr, false);
+            }
+            break;
+        }
+        case Action::Approach::Near: // Never used in GK3.
+        {
+            std::cout << "Executed NEAR approach type!" << std::endl;
+            gActionManager.ExecuteAction(action, nullptr, false);
+            break;
+        }
+        case Action::Approach::NearModel: // Example use: RC1 Bookstore Door, Hallway R25 Door
+        {
             // Find the scene object from the model name.
             GKObject* obj = GetSceneObjectByModelName(action->target);
             if(obj != nullptr)
             {
-                // HACK: We need to find a walkable position near the model's position.
-                // HACK: However, "FindNearestWalkablePosition" (currently) can return walkable *but unreachable* positions.
-                // HACK: To help alleviate that (for now), let's calculate a "near" position in the direction of Ego.
-                // HACK: This "hints" to the walk system that the walk pos should be walkable from Ego's position.
-                Vector3 modelToEgoDir = Vector3::Normalize(mEgo->GetPosition() - obj->GetPosition());
-                Vector3 nearPos = obj->GetPosition() + modelToEgoDir * 50.0f;
-                Vector3 walkPos = mSceneData->GetWalkerBoundary()->FindNearestWalkablePosition(nearPos);
+                // Find nearest walkable pos to this object.
+                Vector3 objPos = obj->GetAABB().GetCenter();
+                Vector3 walkPos = mSceneData->GetWalkerBoundary()->FindNearestWalkablePosition(objPos);
 
                 // We also want "turn to" behavior if already at the walk pos.
-                Heading walkHeading = Heading::FromDirection(obj->GetPosition() - walkPos);
+                Heading walkHeading = Heading::None;
+                if((mEgo->GetPosition() - objPos).GetLengthSq() < 50.0f * 50.0f)
+                {
+                    walkPos = mEgo->GetPosition();
+                    walkHeading = Heading::FromDirection(objPos - mEgo->GetPosition());
+                }
 
-                // Walk there, then do the action.
-                mEgo->WalkTo(walkPos, walkHeading, [action](){
-                    gActionManager.ExecuteAction(action, nullptr, false);
+                // Walk there, and then do the action.
+                mEgo->WalkToBestEffort(walkPos, walkHeading, [action](){
+                    if(!gActionManager.IsActionBarShowing())
+                    {
+                        gActionManager.ExecuteAction(action, nullptr, false);
+                    }
                 });
             }
             else
@@ -1179,49 +1446,52 @@ void Scene::ExecuteAction(const Action* action)
                 // Just do the action if model could not be found.
                 gActionManager.ExecuteAction(action, nullptr, false);
             }
-			break;
-		}
-		case Action::Approach::Region: // Never used in GK3 (it does appear once in a SIF file, but it is misconfigured with an invalid region anyway).
-		{
-			gActionManager.ExecuteAction(action, nullptr, false);
-			break;
-		}
-		case Action::Approach::TurnTo: // Never used in GK3.
-		{
-			gActionManager.ExecuteAction(action, nullptr, false);
-			break;
-		}
-		case Action::Approach::TurnToModel: // Example use: R25 Couch Sit, most B25
-		{
-			// Find position of the model.
-			Vector3 modelPosition;
-			GKObject* obj = GetSceneObjectByModelName(action->target);
-			if(obj != nullptr)
-			{
+            break;
+        }
+        case Action::Approach::Region: // Never used in GK3 (it does appear once in a SIF file, but it is misconfigured with an invalid region anyway).
+        {
+            gActionManager.ExecuteAction(action, nullptr, false);
+            break;
+        }
+        case Action::Approach::TurnTo: // Never used in GK3.
+        {
+            gActionManager.ExecuteAction(action, nullptr, false);
+            break;
+        }
+        case Action::Approach::TurnToModel: // Example use: R25 Couch Sit, most B25
+        {
+            // Find position of the model.
+            Vector3 modelPosition;
+            GKObject* obj = GetSceneObjectByModelName(action->target);
+            if(obj != nullptr)
+            {
                 // The AABB center seems to give better results than just "GetPosition".
                 // This is because some models have their visuals displaced from the actual position (coffee cups in Dining Room for example).
                 modelPosition = obj->GetAABB().GetCenter();
-			}
-			else
-			{
+            }
+            else
+            {
                 // BSP that had a BSPActor generated will actually still use the above AABB code.
                 // Worst case though, if we have some target that only exists in BSP, get its position directly.
-				modelPosition = GetBSP()->GetPosition(action->target);
-			}
+                modelPosition = GetBSP()->GetPosition(action->target);
+            }
 
-			// Get vector from Ego to model.
-			//Debug::DrawLine(mEgo->GetPosition(), modelPosition, Color32::Green, 60.0f);
-			Vector3 egoToModel = modelPosition - mEgo->GetPosition();
+            // Get vector from Ego to model.
+            //Debug::DrawLine(mEgo->GetPosition(), modelPosition, Color32::Green, 60.0f);
+            Vector3 egoToModel = modelPosition - mEgo->GetPosition();
 
-			// Do a "turn to" heading.
-			Heading turnToHeading = Heading::FromDirection(egoToModel);
-			mEgo->TurnTo(turnToHeading, [action]() -> void {
-				gActionManager.ExecuteAction(action, nullptr, false);
-			});
-			break;
-		}
-		case Action::Approach::WalkToSee: // Example use: R25 Look Painting/Couch/Dresser/Plant, RC1 Look Bench/Bookstore Sign
-		{
+            // Do a "turn to" heading.
+            Heading turnToHeading = Heading::FromDirection(egoToModel);
+            mEgo->TurnTo(turnToHeading, [action]() -> void {
+                if(!gActionManager.IsActionBarShowing())
+                {
+                    gActionManager.ExecuteAction(action, nullptr, false);
+                }
+            });
+            break;
+        }
+        case Action::Approach::WalkToSee: // Example use: R25 Look Painting/Couch/Dresser/Plant, RC1 Look Bench/Bookstore Sign
+        {
             // Find the target object by name.
             GKObject* obj = GetSceneObjectByModelName(action->target);
 
@@ -1229,8 +1499,11 @@ void Scene::ExecuteAction(const Action* action)
             // If didn't find it, print a warning/error and just execute right away.
             if(obj != nullptr)
             {
-                mEgo->WalkToSee(obj, [action]() -> void{
-                    gActionManager.ExecuteAction(action, nullptr, false);
+                mEgo->WalkToSee(obj, [action]() {
+                    if(!gActionManager.IsActionBarShowing())
+                    {
+                        gActionManager.ExecuteAction(action, nullptr, false);
+                    }
                 });
             }
             else
@@ -1238,19 +1511,19 @@ void Scene::ExecuteAction(const Action* action)
                 std::cout << "Could not find WalkToSee target " << action->target << std::endl;
                 gActionManager.ExecuteAction(action, nullptr, false);
             }
-			break;
-		}
-		case Action::Approach::None:
-		{
-			// Just do it!
-			gActionManager.ExecuteAction(action, nullptr, false);
-			break;
-		}
-		default:
-		{
-			gReportManager.Log("Error", "Invalid approach " + std::to_string(static_cast<int>(action->approach)));
-			gActionManager.ExecuteAction(action, nullptr, false);
-			break;
-		}
-	}
+            break;
+        }
+        case Action::Approach::None:
+        {
+            // Just do it!
+            gActionManager.ExecuteAction(action, nullptr, false);
+            break;
+        }
+        default:
+        {
+            gReportManager.Log("Error", "Invalid approach " + std::to_string(static_cast<int>(action->approach)));
+            gActionManager.ExecuteAction(action, nullptr, false);
+            break;
+        }
+    }
 }

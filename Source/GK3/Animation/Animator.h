@@ -39,6 +39,9 @@ struct AnimParams
     // If true, this anim will not do any parenting, even if it would otherwise be autodetected and applied.
     bool noParenting = false;
 
+    // If set, this actor is set as the parent for vertex animations (except when the parent IS the object, or for walker DOR models).
+    Actor* parent = nullptr;
+
     // A callback to fire on animation finish.
     std::function<void()> finishCallback = nullptr;
 };
@@ -71,24 +74,24 @@ class Animator : public Component
     TYPEINFO_SUB(Animator, Component);
 public:
     Animator(Actor* owner);
-	
-	// Animation Playback
+
+    // Animation Playback
     void Start(Animation* animation, std::function<void()> finishCallback = nullptr);
     void Start(const AnimParams& animParams, std::function<void()> finishCallback = nullptr);
-	void Stop(Animation* animation, bool skipFinishCallback = false);
+    void Stop(Animation* animation, bool skipFinishCallback = false);
     void StopAll();
-    
-	// Animation Sampling
-	void Sample(Animation* animation, int frame);
+
+    // Animation Sampling
+    void Sample(Animation* animation, int frame);
     void Sample(Animation* animation, int frame, const std::string& modelName);
-	
+
 protected:
-	void OnUpdate(float deltaTime) override;
+    void OnUpdate(float deltaTime) override;
     void OnLateUpdate(float deltaTime) override;
-	
+
 private:
-	// Animations that are currently active.
-	std::vector<AnimationState> mActiveAnimations;
-	
-	void ExecuteFrame(int animIndex, int frameNumber);
+    // Animations that are currently active.
+    std::vector<AnimationState> mActiveAnimations;
+
+    void ExecuteFrame(int animIndex, int frameNumber);
 };

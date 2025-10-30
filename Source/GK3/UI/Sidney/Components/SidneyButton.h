@@ -25,9 +25,10 @@ class UINineSlice;
 class SidneyButton : public Actor
 {
 public:
+    SidneyButton(const std::string& name, Actor* parent);
     SidneyButton(Actor* parent);
     void PrepareToDestroy();
-    
+
     RectTransform* GetRectTransform() const { return static_cast<RectTransform*>(GetTransform()); }
     float GetWidth() const { return GetRectTransform()->GetSizeDelta().x; }
     void SetWidth(float width) { GetRectTransform()->SetSizeDeltaX(width); }

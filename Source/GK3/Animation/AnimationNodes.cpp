@@ -20,20 +20,20 @@
 
 void VertexAnimNode::Play(AnimationState* animState)
 {
-	// Make sure anim state and anim are valid - we need those.
-	if(animState == nullptr || animState->params.animation == nullptr) { return; }
-	
-	// Make sure we have a vertex anim to play...
-	if(vertexAnimation != nullptr)
-	{
-		// Also we need the object to play the vertex anim on!
-		GKObject* obj = gSceneManager.GetScene()->GetSceneObjectByModelName(vertexAnimation->GetModelName());
-		if(obj != nullptr)
-		{
+    // Make sure anim state and anim are valid - we need those.
+    if(animState == nullptr || animState->params.animation == nullptr) { return; }
+
+    // Make sure we have a vertex anim to play...
+    if(vertexAnimation != nullptr)
+    {
+        // Also we need the object to play the vertex anim on!
+        GKObject* obj = gSceneManager.GetScene()->GetSceneObjectByModelName(vertexAnimation->GetModelName());
+        if(obj != nullptr)
+        {
             VertexAnimParams params;
             params.vertexAnimation = vertexAnimation;
             params.framesPerSecond = animState->params.animation->GetFramesPerSecond();
-            
+
             // This logic is a bit tricky/complicated, but it is needed to support starting anims at different times.
             // Usually, we start at t=0, but if executing frame 0, but we are on frame 20, we need to "catch up" by setting starting time for frame 20.
             params.startTime = 0.0f;
@@ -41,50 +41,62 @@ void VertexAnimNode::Play(AnimationState* animState)
             {
                 params.startTime = static_cast<float>(animState->currentFrame - animState->executingFrame) / params.framesPerSecond;
             }
-            
+
             // The animator may update not exactly at the time interval this frame should have executed.
             // If we're already a fraction of time into the current frame, take that into account for smoother animations.
             params.startTime += animState->timer;
 
+            // Is this animation absolute? Usually, this entirely depends on whether absolute coordinates/rotations were provided for this vertex anim in the ANM file.
+            // However, in at least one case (EmlWalkwFolder), absolute anims are specified when relative ones should be used.
+            // Unsure if this is a good global rule, but one way to catch this is to not allow absolute anims if a parent is specified?
+            params.absolute = absolute && animState->params.parent == nullptr;
+
             // If this is an absolute anim, calculate the position/heading to set the model actor to when the anim plays.
-            params.absolute = absolute;
-            if(absolute)
+            if(params.absolute)
             {
                 params.absolutePosition = CalcAbsolutePosition();
                 params.absoluteHeading = Heading::FromDegrees(absoluteWorldToModelHeading - absoluteModelToActorHeading);
             }
 
-            // If not an absolute anim, see if the animation's name is prefixed by the name of a model in the scene.
-            // If so...we will treat that model as our parent (so, we move/rotate to match them).
-            // (This feels like a HACK, but the original game also does this parenting, but the assets themselves have no flags/indicators about it.)
-            // (So, they must do it in some similar way to this, unless I'm missing something?)
-            if(!absolute && !animState->params.noParenting)
+            // If a parent is specified (or if we can detect that this anim should be parented by it's name), specify a parent in the vertex anim params.
+            // This is often needed when an object is attached to another: Roxanne walking with spray bottle, Emilio/Buchelli walking with newspapers, Gabe walking with mic headset, etc.
+            if(!params.absolute && !animState->params.noParenting)
             {
-                // e.g. Grab the "ROX" from "ROX_SPRAYANDWIPE2.ANM".
-                const std::string& animName = animState->params.animation->GetName();
-                std::string prefix = animName.substr(0, 3);
-
-                // If a parent exists, and it isn't ourselves, use it!
-                GKObject* parent = gSceneManager.GetScene()->GetSceneObjectByModelName(prefix);
-                if(parent != nullptr && parent != obj)
+                if(animState->params.parent != nullptr)
                 {
-                    params.parent = parent->GetMeshRenderer()->GetOwner();
-                    //printf("Found parent %s for %s\n", parent->GetName().c_str(), obj->GetName().c_str());
+                    if(animState->params.parent != obj && !StringUtil::StartsWithIgnoreCase(obj->GetName(), "dor"))
+                    {
+                        params.parent = animState->params.parent;
+                    }
+                }
+                else
+                {
+                    // e.g. Grab the "ROX" from "ROX_SPRAYANDWIPE2.ANM".
+                    const std::string& animName = animState->params.animation->GetName();
+                    std::string prefix = animName.substr(0, 3);
+
+                    // If a parent exists, and it isn't ourselves, use it!
+                    GKObject* parent = gSceneManager.GetScene()->GetSceneObjectByModelName(prefix);
+                    if(parent != nullptr && parent != obj)
+                    {
+                        params.parent = parent->GetMeshRenderer()->GetOwner();
+                        //printf("Found parent %s for %s\n", parent->GetName().c_str(), obj->GetName().c_str());
+                    }
                 }
             }
 
             // Move anims allow the actor associated with the model to stay in its final position when the animation ends, instead of reverting.
             // Absolute anims are always "move anims".
-            params.allowMove = animState->params.allowMove || absolute;
+            params.allowMove = animState->params.allowMove || params.absolute;
 
             // Keep track of whether this is an autoscript anim.
             // This is mainly b/c autoscript anims are lower priority than other anims.
             params.fromAutoScript = animState->params.fromAutoScript;
-            
+
             // Start the anim.
             obj->StartAnimation(params);
-		}
-	}
+        }
+    }
 }
 
 void VertexAnimNode::Sample(int frame)
@@ -118,14 +130,14 @@ void VertexAnimNode::Sample(int frame)
 
 void VertexAnimNode::Stop()
 {
-	if(vertexAnimation != nullptr)
-	{
-		GKObject* obj = gSceneManager.GetScene()->GetSceneObjectByModelName(vertexAnimation->GetModelName());
-		if(obj != nullptr)
-		{
+    if(vertexAnimation != nullptr)
+    {
+        GKObject* obj = gSceneManager.GetScene()->GetSceneObjectByModelName(vertexAnimation->GetModelName());
+        if(obj != nullptr)
+        {
             obj->StopAnimation(vertexAnimation);
-		}
-	}
+        }
+    }
 }
 
 bool VertexAnimNode::AppliesToModel(const std::string& modelName)
@@ -147,12 +159,12 @@ Vector3 VertexAnimNode::CalcAbsolutePosition()
 
 void SceneTextureAnimNode::Play(AnimationState* animState)
 {
-	Texture* texture = gAssetManager.LoadSceneTexture(textureName, AssetScope::Scene);
-	if(texture != nullptr)
-	{
-		//TODO: Ensure sceneName matches loaded scene name?
-		gSceneManager.GetScene()->ApplyTextureToSceneModel(sceneModelName, texture);
-	}
+    Texture* texture = gAssetManager.LoadSceneTexture(textureName, AssetScope::Scene);
+    if(texture != nullptr)
+    {
+        //TODO: Ensure sceneName matches loaded scene name?
+        gSceneManager.GetScene()->ApplyTextureToSceneModel(sceneModelName, texture);
+    }
 }
 
 void SceneTextureAnimNode::Sample(int frame)
@@ -162,8 +174,8 @@ void SceneTextureAnimNode::Sample(int frame)
 
 void SceneModelVisibilityAnimNode::Play(AnimationState* animState)
 {
-	//TODO: Ensure sceneName matches loaded scene name?
-	gSceneManager.GetScene()->SetSceneModelVisibility(sceneModelName, visible);
+    //TODO: Ensure sceneName matches loaded scene name?
+    gSceneManager.GetScene()->SetSceneModelVisibility(sceneModelName, visible);
 }
 
 void SceneModelVisibilityAnimNode::Sample(int frame)
@@ -173,12 +185,12 @@ void SceneModelVisibilityAnimNode::Sample(int frame)
 
 void ModelTextureAnimNode::Play(AnimationState* animState)
 {
-	// Get actor by model name.
-	GKObject* obj = gSceneManager.GetScene()->GetSceneObjectByModelName(modelName);
-	if(obj != nullptr)
-	{
-		// Grab the material used to render this meshIndex/submeshIndex pair.
-		Material* material = obj->GetMeshRenderer()->GetMaterial(meshIndex, submeshIndex);
+    // Get actor by model name.
+    GKObject* obj = gSceneManager.GetScene()->GetSceneObjectByModelName(modelName);
+    if(obj != nullptr)
+    {
+        // Grab the material used to render this meshIndex/submeshIndex pair.
+        Material* material = obj->GetMeshRenderer()->GetMaterial(meshIndex, submeshIndex);
 
         // HACK: This *seems* quite silly, but in one case (TE4 mirror anims), the animation doesn't function correctly unless I do this.
         // HACK: When Gabe steps on a pedestal, the mirror changes its texture. But the anim specifies submesh 0, and that isn't the right one!
@@ -199,7 +211,7 @@ void ModelTextureAnimNode::Play(AnimationState* animState)
             ++currentSubmeshIndex;
             material = obj->GetMeshRenderer()->GetMaterial(meshIndex, currentSubmeshIndex);
         }
-	}
+    }
 }
 
 void ModelTextureAnimNode::Sample(int frame)
@@ -209,10 +221,10 @@ void ModelTextureAnimNode::Sample(int frame)
 
 void ModelVisibilityAnimNode::Play(AnimationState* animState)
 {
-	// Get actor by model name.
-	GKObject* obj = gSceneManager.GetScene()->GetSceneObjectByModelName(modelName);
-	if(obj != nullptr)
-	{
+    // Get actor by model name.
+    GKObject* obj = gSceneManager.GetScene()->GetSceneObjectByModelName(modelName);
+    if(obj != nullptr)
+    {
         MeshRenderer* meshRenderer = obj->GetMeshRenderer();
         if(meshRenderer != nullptr)
         {
@@ -220,17 +232,13 @@ void ModelVisibilityAnimNode::Play(AnimationState* animState)
             {
                 // Toggle specific submesh visibility.
                 meshRenderer->SetVisibility(meshIndex, submeshIndex, visible);
-
-                // If we're toggling specific submeshes on/off, let's assume we want the object as a whole enabled...
-                meshRenderer->SetEnabled(true);
-                obj->SetActive(true);
             }
             else
             {
                 obj->SetActive(visible);
             }
         }
-	}
+    }
 }
 
 void ModelVisibilityAnimNode::Sample(int frame)
@@ -314,26 +322,26 @@ void FootstepAnimNode::Play(AnimationState* animState)
 {
     if(gActionManager.IsSkippingCurrentAction()) { return; }
 
-	// Get actor using the specified noun.
-	GKActor* actor = gSceneManager.GetScene()->GetActorByNoun(actorNoun);
-	if(actor != nullptr)
-	{
+    // Get actor using the specified noun.
+    GKActor* actor = gSceneManager.GetScene()->GetActorByNoun(actorNoun);
+    if(actor != nullptr)
+    {
         // Play a footstep.
         PlayFootSound(false, actor);
-	}
+    }
 }
 
 void FootscuffAnimNode::Play(AnimationState* animState)
 {
     if(gActionManager.IsSkippingCurrentAction()) { return; }
 
-	// Get actor using the specified noun.
-	GKActor* actor = gSceneManager.GetScene()->GetActorByNoun(actorNoun);
-	if(actor != nullptr)
-	{
+    // Get actor using the specified noun.
+    GKActor* actor = gSceneManager.GetScene()->GetActorByNoun(actorNoun);
+    if(actor != nullptr)
+    {
         // Play a foot scuff.
         PlayFootSound(true, actor);
-	}
+    }
 }
 
 void PlaySoundtrackAnimNode::Play(AnimationState* animState)
@@ -346,7 +354,7 @@ void PlaySoundtrackAnimNode::Play(AnimationState* animState)
 
     Soundtrack* soundtrack = gAssetManager.LoadSoundtrack(soundtrackName, AssetScope::Scene);
     if(soundtrack == nullptr) { return; }
-    soundtrackPlayer->Play(soundtrack);
+    soundtrackPlayer->Play(soundtrack, nonLooping);
 }
 
 void StopSoundtrackAnimNode::Play(AnimationState* animState)
@@ -358,14 +366,17 @@ void StopSoundtrackAnimNode::Play(AnimationState* animState)
     if(soundtrackPlayer == nullptr) { return; }
 
     // Either stop all soundtracks, or a specific one.
-	if(soundtrackName.empty())
-	{
+    if(soundtrackName.empty())
+    {
         soundtrackPlayer->StopAll();
-	}
-	else
-	{
-        soundtrackPlayer->Stop(soundtrackName);
-	}
+    }
+    else
+    {
+        // Since this is an animation command to stop a specific soundtrack, let's set the "force" flag to true.
+        // Assuming that if you make a specific command like that, you really mean it!
+        // This fixes a few instances where anim tells soundtrack to stop, but soundtrack is set to "play to end".
+        soundtrackPlayer->Stop(soundtrackName, true);
+    }
 }
 
 void CameraAnimNode::Play(AnimationState* animState)
@@ -387,17 +398,17 @@ void CameraAnimNode::Sample(int frame)
 
 void FaceTexAnimNode::Play(AnimationState* animState)
 {
-	// Get actor using the specified noun.
-	GKActor* actor = gSceneManager.GetScene()->GetActorByNoun(actorNoun);
-	if(actor != nullptr)
-	{
-		// In this case, the texture name is what it is.
-		Texture* texture = gAssetManager.LoadTexture(textureName, animState->params.animation->GetScope());
-		if(texture != nullptr)
-		{
-			actor->GetFaceController()->Set(faceElement, texture);
-		}
-	}
+    // Get actor using the specified noun.
+    GKActor* actor = gSceneManager.GetScene()->GetActorByNoun(actorNoun);
+    if(actor != nullptr)
+    {
+        // In this case, the texture name is what it is.
+        Texture* texture = gAssetManager.LoadTexture(textureName, animState->params.animation->GetScope());
+        if(texture != nullptr)
+        {
+            actor->GetFaceController()->Set(faceElement, texture);
+        }
+    }
 }
 
 void FaceTexAnimNode::Sample(int frame)
@@ -407,12 +418,12 @@ void FaceTexAnimNode::Sample(int frame)
 
 void UnFaceTexAnimNode::Play(AnimationState* animState)
 {
-	// Get actor using the specified noun.
-	GKActor* actor = gSceneManager.GetScene()->GetActorByNoun(actorNoun);
-	if(actor != nullptr)
-	{
-		actor->GetFaceController()->Clear(faceElement);
-	}
+    // Get actor using the specified noun.
+    GKActor* actor = gSceneManager.GetScene()->GetActorByNoun(actorNoun);
+    if(actor != nullptr)
+    {
+        actor->GetFaceController()->Clear(faceElement);
+    }
 }
 
 void UnFaceTexAnimNode::Sample(int frame)
@@ -422,17 +433,17 @@ void UnFaceTexAnimNode::Sample(int frame)
 
 void LipSyncAnimNode::Play(AnimationState* animState)
 {
-	// Get actor using the specified noun.
-	GKActor* actor = gSceneManager.GetScene()->GetActorByNoun(actorNoun);
-	if(actor != nullptr)
-	{
-		// The mouth texture name is based on the current face config for the character.
-		Texture* mouthTexture = gAssetManager.LoadTexture(actor->GetConfig()->faceConfig->identifier + "_" + mouthTextureName, animState->params.animation->GetScope());
-		if(mouthTexture != nullptr)
-		{
-			actor->GetFaceController()->SetMouth(mouthTexture);
-		}
-	}
+    // Get actor using the specified noun.
+    GKActor* actor = gSceneManager.GetScene()->GetActorByNoun(actorNoun);
+    if(actor != nullptr)
+    {
+        // The mouth texture name is based on the current face config for the character.
+        Texture* mouthTexture = gAssetManager.LoadTexture(actor->GetConfig()->faceConfig->identifier + "_" + mouthTextureName, animState->params.animation->GetScope());
+        if(mouthTexture != nullptr)
+        {
+            actor->GetFaceController()->SetMouth(mouthTexture);
+        }
+    }
 }
 
 void LipSyncAnimNode::Sample(int frame)
@@ -442,7 +453,7 @@ void LipSyncAnimNode::Sample(int frame)
 
 void GlanceAnimNode::Play(AnimationState* animState)
 {
-	std::cout << actorNoun << " GLANCE AT " << position << std::endl;
+    std::cout << actorNoun << " GLANCE AT " << position << std::endl;
 }
 
 void GlanceAnimNode::Sample(int frame)
@@ -480,7 +491,7 @@ void ExpressionAnimNode::Sample(int frame)
 
 void SpeakerAnimNode::Play(AnimationState* animState)
 {
-	gDialogueManager.SetSpeaker(actorNoun);
+    gDialogueManager.SetSpeaker(actorNoun);
 }
 
 void SpeakerAnimNode::Sample(int frame)
@@ -517,7 +528,7 @@ void SpeakerCaptionAnimNode::Sample(int frame)
 
 void DialogueCueAnimNode::Play(AnimationState* animState)
 {
-	gDialogueManager.TriggerDialogueCue();
+    gDialogueManager.TriggerDialogueCue();
     gGK3UI.FinishCaption();
 }
 

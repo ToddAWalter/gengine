@@ -5,12 +5,12 @@
 #include "AssetManager.h"
 #include "GameProgress.h"
 #include "GEngine.h"
+#include "GK3UI.h"
 #include "InputManager.h"
 #include "InventoryManager.h"
 #include "Texture.h"
-#include "UICanvas.h"
 #include "UIButton.h"
-#include "UIImage.h"
+#include "UIUtil.h"
 
 InventoryInspectScreen::InventoryInspectScreen() : Actor("InventoryInspectScreen", TransformType::RectTransform),
     mLayer("CloseUpLayer")
@@ -19,25 +19,25 @@ InventoryInspectScreen::InventoryInspectScreen() : Actor("InventoryInspectScreen
     mLayer.OverrideAudioState(true, true, false);
 
     // Add canvas to render UI elements.
-	AddComponent<UICanvas>(6);
-	
-	// Add black background image that blocks out the scene entirely.
-    {
-        UIImage* background = AddComponent<UIImage>();
-        background->SetTexture(&Texture::Black);
+    UI::AddCanvas(this, 6, Color32::Black);
 
-        RectTransform* inventoryRectTransform = GetComponent<RectTransform>();
-        inventoryRectTransform->SetSizeDelta(0.0f, 0.0f);
-        inventoryRectTransform->SetAnchorMin(Vector2::Zero);
-        inventoryRectTransform->SetAnchorMax(Vector2::One);
+    // Create closeup image. It's just positioned at center of screen, which is default.
+    mCloseupImage = UI::CreateWidgetActor<UIButton>("CloseupButton", this);
+
+    // Create extra LSR buttons, which are only used by the LSR inventory item.
+    {
+        for(int i = 0; i < 3; ++i)
+        {
+            mLSRButtons[i] = UI::CreateWidgetActor<UIButton>("LsrStanza" + std::to_string(i), mCloseupImage);
+            mLSRButtons[i]->SetEnabled(false);
+            mLSRButtons[i]->GetRectTransform()->SetAnchor(AnchorPreset::BottomLeft);
+        }
     }
-	
-	// Add exit button to bottom-left corner of screen.
-    {
-        Actor* exitButtonActor = new Actor("Exit Button", TransformType::RectTransform);
-        exitButtonActor->GetTransform()->SetParent(GetTransform());
-        UIButton* exitButton = exitButtonActor->AddComponent<UIButton>();
 
+    // Add exit button to bottom-left corner of screen.
+    // Do this AFTER creating closeup image, so the exit button renders above it.
+    {
+        UIButton* exitButton = UI::CreateWidgetActor<UIButton>("ExitButton", this);
         exitButton->SetUpTexture(gAssetManager.LoadTexture("EXITN.BMP"));
         exitButton->SetDownTexture(gAssetManager.LoadTexture("EXITD.BMP"));
         exitButton->SetHoverTexture(gAssetManager.LoadTexture("EXITHOV.BMP"));
@@ -46,37 +46,13 @@ InventoryInspectScreen::InventoryInspectScreen() : Actor("InventoryInspectScreen
             Hide();
         });
         exitButton->SetTooltipText("closeupexit");
+
+        exitButton->GetRectTransform()->SetAnchor(AnchorPreset::BottomLeft);
+        exitButton->GetRectTransform()->SetAnchoredPosition(10.0f, 10.0f);
         mExitButton = exitButton;
-
-        RectTransform* exitButtonRectTransform = exitButtonActor->GetComponent<RectTransform>();
-        exitButtonRectTransform->SetSizeDelta(58.0f, 26.0f); // texture width/height
-        exitButtonRectTransform->SetAnchor(Vector2::Zero);
-        exitButtonRectTransform->SetAnchoredPosition(10.0f, 10.0f);
-        exitButtonRectTransform->SetPivot(0.0f, 0.0f);
-    }
-	
-	// Create closeup image. It's just positioned at center of screen, which is default.
-    {
-        Actor* closeupActor = new Actor("Closeup Button", TransformType::RectTransform);
-        closeupActor->GetTransform()->SetParent(GetTransform());
-
-        mCloseupImage = closeupActor->AddComponent<UIButton>();
     }
 
-    // Create extra LSR buttons, which are only used by the LSR inventory item.
-    {
-        for(int i = 0; i < 3; ++i)
-        {
-            Actor* lsrActor = new Actor("LSR", TransformType::RectTransform);
-            lsrActor->GetTransform()->SetParent(mCloseupImage->GetRectTransform());
-
-            mLSRButtons[i] = lsrActor->AddComponent<UIButton>();
-            mLSRButtons[i]->SetEnabled(false);
-            mLSRButtons[i]->GetRectTransform()->SetAnchor(AnchorPreset::BottomLeft);
-        }
-    }
-	
-	// Hide by default.
+    // Hide by default.
     SetActive(false);
 }
 
@@ -86,6 +62,9 @@ void InventoryInspectScreen::Show(const std::string& itemName)
 
     // Save item name.
     mInspectItemName = itemName;
+
+    // Keep track of whether this is an item in our inventory or not.
+    mInspectingItemFromInventory = gInventoryManager.HasInventoryItem(itemName);
 
     // If we're viewing LSR, we have to do some special stuff.
     if(IsLSR())
@@ -133,15 +112,15 @@ void InventoryInspectScreen::Show(const std::string& itemName)
             mLSRButtons[i]->SetEnabled(false);
         }
     }
-	
-	// Actually show the stuff!
-	SetActive(true);
+
+    // Actually show the stuff!
+    SetActive(true);
 }
 
 void InventoryInspectScreen::Hide()
 {
     if(!IsActive()) { return; }
-	SetActive(false);
+    SetActive(false);
     gLayerManager.PopLayer(&mLayer);
 }
 
@@ -173,7 +152,7 @@ void InventoryInspectScreen::TurnLSRPageRight()
 void InventoryInspectScreen::OnUpdate(float deltaTime)
 {
     // Escape key is a shortcut to exit. But be sure this screen's on the top of all others and no action is playing.
-    if(gLayerManager.IsTopLayer(&mLayer) && !gActionManager.IsActionPlaying() && gInputManager.IsKeyLeadingEdge(SDL_SCANCODE_ESCAPE))
+    if(gGK3UI.CanExitScreen(mLayer) && gInputManager.IsKeyLeadingEdge(SDL_SCANCODE_ESCAPE))
     {
         mExitButton->AnimatePress();
     }
@@ -190,17 +169,17 @@ void InventoryInspectScreen::OnClicked(const std::string& noun)
     }
 
     // Show the action bar for this noun.
-    gActionManager.ShowActionBar(noun, [this, noun](const Action* action){
+    gActionManager.ShowActionBar(noun, true, [this, noun](const Action* action){
 
         // Perform the action.
         gActionManager.ExecuteAction(action, [this, noun](const Action* action){
 
-            // After the action completes, check if we still have the inventory item shown.
+            // If we interacted with an item from our inventory, and it's not in our inventory after, hide this screen.
             // In some rare cases (ex: eating a candy), the item no longer exists, so we should close this screen.
             if(StringUtil::EqualsIgnoreCase(noun, mInspectItemName))
             {
                 bool isInInventory = gLayerManager.IsLayerInStack("InventoryLayer");
-                if(isInInventory && !gInventoryManager.HasInventoryItem(mInspectItemName))
+                if(isInInventory && mInspectingItemFromInventory && !gInventoryManager.HasInventoryItem(mInspectItemName))
                 {
                     Hide();
                 }
@@ -211,7 +190,7 @@ void InventoryInspectScreen::OnClicked(const std::string& noun)
     // A "PICKUP" action should appear after the "LOOK" action (or at the front if no "LOOK" action exists).
     // This allows the player to make this the active inventory item, even from the closeup view.
     ActionBar* actionBar = gActionManager.GetActionBar();
-    if(!actionBar->HasVerb("PICKUP"))
+    if(!actionBar->HasVerb("PICKUP") && gInventoryManager.HasInventoryItem(mInspectItemName))
     {
         actionBar->AddVerbAtIndex("PICKUP", actionBar->GetVerbIndex("LOOK") + 1, [this](){
             gInventoryManager.SetActiveInventoryItem(mInspectItemName);
@@ -225,7 +204,12 @@ void InventoryInspectScreen::OnClicked(const std::string& noun)
             gInventoryManager.InventoryUninspect();
         });
     }
-    
+
+    // When the inspect screen is not showing from the inventory screen, we shouldn't show the SCANNER verb action.
+    if(!gLayerManager.IsLayerInStack("InventoryLayer"))
+    {
+        actionBar->RemoveVerb("SCANNER");
+    }
 }
 
 bool InventoryInspectScreen::IsDemoIntro() const
@@ -286,7 +270,7 @@ void InventoryInspectScreen::InitLSR()
         mLSRButtons[1]->SetPressCallback([this](UIButton* button){
             OnClicked("LSR_PISCES");
         });
-        
+
         // Third button is unused (there's only two sections on this page).
         mLSRButtons[2]->SetEnabled(false);
     }

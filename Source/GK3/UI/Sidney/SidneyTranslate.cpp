@@ -29,7 +29,7 @@ void SidneyTranslate::Init(Actor* parent, SidneyFiles* sidneyFiles)
     });
 
     // Add menu bar.
-    mMenuBar.Init(mRoot, SidneyUtil::GetTranslateLocalizer().GetText("ScreenName"), 140.0f);
+    mMenuBar.Init(mRoot, SidneyUtil::GetTranslateLocalizer().GetText("ScreenName"));
     mMenuBar.SetFirstDropdownPosition(24.0f);
     mMenuBar.SetDropdownSpacing(26.0f);
 
@@ -55,7 +55,7 @@ void SidneyTranslate::Init(Actor* parent, SidneyFiles* sidneyFiles)
             });
         });
     }
-    
+
     // Create window for translation area.
     {
         mTranslateWindow = new Actor(TransformType::RectTransform);
@@ -66,14 +66,14 @@ void SidneyTranslate::Init(Actor* parent, SidneyFiles* sidneyFiles)
         border->GetRectTransform()->SetSizeDelta(526.0f, 340.0f);
 
         // Add divider line for box header.
-        UIImage* headerDividerImage = UIUtil::NewUIActorWithWidget<UIImage>(mTranslateWindow);
+        UIImage* headerDividerImage = UI::CreateWidgetActor<UIImage>("DividerTop", mTranslateWindow);
         headerDividerImage->SetTexture(gAssetManager.LoadTexture("S_BOX_TOP.BMP"), true);
         headerDividerImage->GetRectTransform()->SetAnchor(AnchorPreset::TopStretch);
         headerDividerImage->GetRectTransform()->SetAnchoredPosition(0.0f, -17.0f);
         headerDividerImage->GetRectTransform()->SetSizeDeltaX(0.0f);
 
         // Add another one for the bottom section.
-        UIImage* bottomDividerImage = UIUtil::NewUIActorWithWidget<UIImage>(mTranslateWindow);
+        UIImage* bottomDividerImage = UI::CreateWidgetActor<UIImage>("DividerBottom", mTranslateWindow);
         bottomDividerImage->SetTexture(gAssetManager.LoadTexture("S_BOX_TOP.BMP"), true);
         bottomDividerImage->GetRectTransform()->SetAnchor(AnchorPreset::TopStretch);
         bottomDividerImage->GetRectTransform()->SetAnchoredPosition(0.0f, -256.0f);
@@ -82,7 +82,7 @@ void SidneyTranslate::Init(Actor* parent, SidneyFiles* sidneyFiles)
 
     // Top part of window: header label in top right corner.
     {
-        mTranslateHeaderLabel = UIUtil::NewUIActorWithWidget<UILabel>(mTranslateWindow);
+        mTranslateHeaderLabel = UI::CreateWidgetActor<UILabel>("HeaderLabel", mTranslateWindow);
         mTranslateHeaderLabel->SetFont(gAssetManager.LoadFont("SID_TEXT_14.FON"));
         mTranslateHeaderLabel->SetHorizonalAlignment(HorizontalAlignment::Right);
         mTranslateHeaderLabel->SetVerticalAlignment(VerticalAlignment::Top);
@@ -96,14 +96,14 @@ void SidneyTranslate::Init(Actor* parent, SidneyFiles* sidneyFiles)
     // Center part of window: area with text to be translated.
     {
         // Position black background to cover entire center area.
-        UIImage* centerBackground = UIUtil::NewUIActorWithWidget<UIImage>(mTranslateWindow);
+        UIImage* centerBackground = UI::CreateWidgetActor<UIImage>("Background", mTranslateWindow);
         centerBackground->SetTexture(&Texture::Black);
         centerBackground->GetRectTransform()->SetSizeDelta(524.0f, 237.0f);
         centerBackground->GetRectTransform()->SetAnchor(AnchorPreset::TopLeft);
         centerBackground->GetRectTransform()->SetAnchoredPosition(1, -18.0f);
 
         // Add scroll area.
-        UICanvas* canvas = UIUtil::NewUIActorWithCanvas(centerBackground->GetOwner(), 1);
+        UICanvas* canvas = UI::CreateCanvas("ScrollCanvas", centerBackground, 1);
         canvas->SetMasked(true);
         canvas->GetRectTransform()->SetAnchor(AnchorPreset::CenterStretch);
         canvas->GetRectTransform()->SetAnchoredPosition(0.0f, 0.0f);
@@ -114,11 +114,11 @@ void SidneyTranslate::Init(Actor* parent, SidneyFiles* sidneyFiles)
         scrollRect->GetRectTransform()->SetSizeDelta(0.0f, 0.0f);
         scrollRect->SetScrollbarWidth(5.0f);
         mTranslateTextScrollRect = scrollRect;
-        
+
         // Create text as child of background. Fill that area, with some margins on left/right.
-        mTranslateTextLabel = UIUtil::NewUIActorWithWidget<UILabel>(scrollRect);
+        mTranslateTextLabel = UI::CreateWidgetActor<UILabel>("TranslateText", scrollRect);
         mTranslateTextLabel->SetFont(gAssetManager.LoadFont("SID_TEXT_14.FON"));
-        mTranslateTextLabel->SetText("** Open File: Arcad_Txt **\n\n\nEt in Arcadia Ego");
+        mTranslateTextLabel->SetText("");
         mTranslateTextLabel->SetVerticalAlignment(VerticalAlignment::Top);
         mTranslateTextLabel->SetHorizontalOverflow(HorizontalOverflow::Wrap);
 
@@ -130,7 +130,7 @@ void SidneyTranslate::Init(Actor* parent, SidneyFiles* sidneyFiles)
     // Create bottom part of window: translation options.
     {
         // Create static "From:" and "To:" labels.
-        UILabel* fromLabel = UIUtil::NewUIActorWithWidget<UILabel>(mTranslateWindow);
+        UILabel* fromLabel = UI::CreateWidgetActor<UILabel>("FromLabel", mTranslateWindow);
         fromLabel->SetFont(gAssetManager.LoadFont("SID_PDN_10_UL.FON"));
         fromLabel->SetText(SidneyUtil::GetTranslateLocalizer().GetText("From"));
         fromLabel->SetVerticalAlignment(VerticalAlignment::Top);
@@ -138,7 +138,7 @@ void SidneyTranslate::Init(Actor* parent, SidneyFiles* sidneyFiles)
         fromLabel->GetRectTransform()->SetAnchoredPosition(48.0f, -258.0f);
         fromLabel->GetRectTransform()->SetSizeDelta(100.0f, 10.0f);
 
-        UILabel* toLabel = UIUtil::NewUIActorWithWidget<UILabel>(mTranslateWindow);
+        UILabel* toLabel = UI::CreateWidgetActor<UILabel>("ToLabel", mTranslateWindow);
         toLabel->SetFont(gAssetManager.LoadFont("SID_PDN_10_UL.FON"));
         toLabel->SetText(SidneyUtil::GetTranslateLocalizer().GetText("To"));
         toLabel->SetVerticalAlignment(VerticalAlignment::Top);
@@ -147,7 +147,7 @@ void SidneyTranslate::Init(Actor* parent, SidneyFiles* sidneyFiles)
         toLabel->GetRectTransform()->SetSizeDelta(100.0f, 10.0f);
 
         // An image connecting the from and to buttons.
-        UIImage* fromToImage = UIUtil::NewUIActorWithWidget<UIImage>(mTranslateWindow);
+        UIImage* fromToImage = UI::CreateWidgetActor<UIImage>("FromToConnector", mTranslateWindow);
         fromToImage->SetTexture(gAssetManager.LoadTexture("S_FROM_TO.BMP"), true);
         fromToImage->GetRectTransform()->SetAnchor(AnchorPreset::TopLeft);
         fromToImage->GetRectTransform()->SetAnchoredPosition(105.0f, -271.0f);
@@ -161,6 +161,7 @@ void SidneyTranslate::Init(Actor* parent, SidneyFiles* sidneyFiles)
             Language language = static_cast<Language>(i);
 
             SidneyButton* fromButton = SidneyUtil::CreateSmallButton(mTranslateWindow);
+            fromButton->SetName("FromButton");
             fromButton->SetWidth(70.0f);
             fromButton->SetText(StringUtil::ToUpperCopy(GetLocKeyForLanguage(language)));
             fromButton->GetRectTransform()->SetAnchor(AnchorPreset::TopLeft);
@@ -182,6 +183,7 @@ void SidneyTranslate::Init(Actor* parent, SidneyFiles* sidneyFiles)
             mFromButtons[i] = fromButton;
 
             SidneyButton* toButton = SidneyUtil::CreateSmallButton(mTranslateWindow);
+            toButton->SetName("ToButton");
             toButton->SetWidth(70.0f);
             toButton->SetText(StringUtil::ToUpperCopy(GetLocKeyForLanguage(language)));
             toButton->GetRectTransform()->SetAnchor(AnchorPreset::TopLeft);
@@ -207,6 +209,7 @@ void SidneyTranslate::Init(Actor* parent, SidneyFiles* sidneyFiles)
 
         // Finally, a "translate now" button.
         SidneyButton* translateButton = SidneyUtil::CreateSmallButton(mTranslateWindow);
+        translateButton->SetName("TranslateButton");
         translateButton->SetWidth(108.0f);
         translateButton->SetText(SidneyUtil::GetTranslateLocalizer().GetText("TranslateNow"));
         translateButton->GetRectTransform()->SetAnchor(AnchorPreset::TopLeft);
@@ -286,6 +289,8 @@ void SidneyTranslate::Show(int openFileId)
         if(action != nullptr)
         {
             // Set from/to buttons to the correct state.
+            mFromLanguage = action->language;
+            mToLanguage = Language::English;
             for(int i = 0; i < 4; ++i)
             {
                 mFromButtons[i]->SetSelected(action->language == static_cast<Language>(i));
@@ -491,19 +496,31 @@ void SidneyTranslate::OnTranslateButtonPressed()
         }
         else
         {
-            
+
             gActionManager.ExecuteSheepAction("wait StartDialogue(\"02oc02zq91\", 1)");
         }
         return;
     }
 
+    // One translation has a missing word, and needs some extra logic - detect if we need this!
+    bool needToAddMissingWord = mTranslateFileId == SidneyFileIds::kArcadiaText && !gGameProgress.GetFlag("ArcadiaComplete");
+
     // If we already translated it, we're done here.
     if(mPerformedTranslation)
     {
-        mPopup->ResetToDefaults();
-        mPopup->SetTextAlignment(HorizontalAlignment::Center);
-        mPopup->SetText(SidneyUtil::GetTranslateLocalizer().GetText("NoFurther"));
-        mPopup->ShowOneButton();
+        // But if the word is still missing, ask again.
+        if(needToAddMissingWord)
+        {
+            AskToAddMissingWord();
+        }
+        else
+        {
+            // Otherwise, show "no further translation available" message.
+            mPopup->ResetToDefaults();
+            mPopup->SetTextAlignment(HorizontalAlignment::Center);
+            mPopup->SetText(SidneyUtil::GetTranslateLocalizer().GetText("NoFurther"));
+            mPopup->ShowOneButton();
+        }
         return;
     }
 
@@ -528,28 +545,29 @@ void SidneyTranslate::OnTranslateButtonPressed()
         gGameProgress.ChangeScore(action->scoreEvent);
     }
 
-    // For the Arcadia text, there's some additional logic needed.
-    if(mTranslateFileId == SidneyFileIds::kArcadiaText)
+    // Upon first successful translation, if a word is missing, ask about adding it.
+    if(needToAddMissingWord)
     {
-        // If we've already successfully translated this before, we don't need to enter the missing word.
-        if(!gGameProgress.GetFlag("ArcadiaComplete"))
-        {
-            // We translated to/from the right languages, but the translation is missing a word.
-            // Show "sentence incomplete - do you want to add words?" popup.
-            mPopup->ResetToDefaults();
-            mPopup->SetText(SidneyUtil::GetTranslateLocalizer().GetText("Subject") + "\n" + SidneyUtil::GetTranslateLocalizer().GetText("Question"));
-            mPopup->SetTextAlignment(HorizontalAlignment::Left);
-            mPopup->SetWindowPosition(Vector2(88.0f, 135.0f));
-            mPopup->SetWindowSize(Vector2(280.0f, 120.0f));
-            mPopup->ShowTwoButton([this](){
-                // Show the UI flow (popups) to allow the player to enter the missing word.
-                PromptForMissingWord();
-            });
-        }
+        AskToAddMissingWord();
     }
 
     // The file is translated.
     mPerformedTranslation = true;
+}
+
+void SidneyTranslate::AskToAddMissingWord()
+{
+    // We translated to/from the right languages, but the translation is missing a word.
+    // Show "sentence incomplete - do you want to add words?" popup.
+    mPopup->ResetToDefaults();
+    mPopup->SetText("\n  " + SidneyUtil::GetTranslateLocalizer().GetText("Subject") + "\n\n  " + SidneyUtil::GetTranslateLocalizer().GetText("Question"));
+    mPopup->SetTextAlignment(HorizontalAlignment::Left);
+    mPopup->SetWindowPosition(Vector2(88.0f, 135.0f));
+    mPopup->SetWindowSize(Vector2(280.0f, 120.0f));
+    mPopup->ShowTwoButton([this](){
+        // Show the UI flow (popups) to allow the player to enter the missing word.
+        PromptForMissingWord();
+    });
 }
 
 void SidneyTranslate::PromptForMissingWord()

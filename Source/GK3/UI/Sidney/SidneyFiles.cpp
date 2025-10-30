@@ -14,6 +14,7 @@
 #include "UIImage.h"
 #include "UILabel.h"
 #include "UINineSlice.h"
+#include "UIScrollRect.h"
 #include "UIUtil.h"
 
 void SidneyFiles::Init(Sidney* parent)
@@ -71,14 +72,17 @@ void SidneyFiles::Init(Sidney* parent)
     mAllFiles.emplace_back(26, SidneyFileType::Image, "fileSUMNote",          "I_AM_WORDS",               "e_sidney_add_sum_note");
 
     // Audio (27-28)
-    mAllFiles.emplace_back(27, SidneyFileType::Audio, "fileAbbeTape",     "", "e_sidney_add_tape_abbe");
-    mAllFiles.emplace_back(28, SidneyFileType::Audio, "fileBuchelliTape", "", "e_sidney_add_tape_buchelli");
+    mAllFiles.emplace_back(27, SidneyFileType::Audio, "fileAbbeTape",     "ABBE_TAPE", "e_sidney_add_tape_abbe");
+    mAllFiles.emplace_back(28, SidneyFileType::Audio, "fileBuchelliTape", "BUCHELLI_TAPE", "e_sidney_add_tape_buchelli");
 
     // Text (29-30)
     mAllFiles.emplace_back(29, SidneyFileType::Text, "fileArcadiaText", "");
-    mAllFiles.emplace_back(30, SidneyFileType::Text, "fileTempleOfSolomonText", "");     //TODO: Is this a text type?
 
-    mAllFiles.emplace_back(31, SidneyFileType::Image, "fileHermeticSymbols", "");         //TODO: Seems doubled up and unused?
+    // Originally, it seems that the emails Grace receives about the Temple of Solomon layout and Hermetic Symbols were supposed to add files to your collection.
+    // However, at some point, they decided to instead just embed the layout and symbols in the email layouts themselves.
+    // So, these files are vestigal and unused in the final game.
+    mAllFiles.emplace_back(30, SidneyFileType::Text, "fileTempleOfSolomonText", "");
+    mAllFiles.emplace_back(31, SidneyFileType::Image, "fileHermeticSymbols", "");
 
     // Licenses (32-36)
     mAllFiles.emplace_back(32, SidneyFileType::License, "fileBuchelliLicense",   "BUCHELLIS_LICENSE", "e_sidney_add_license_buchelli");
@@ -289,10 +293,11 @@ void SidneyFiles::FileListWindow::Init(Actor* parent, bool forShapes)
 {
     mForShapes = forShapes;
 
-    // Add dialog background.
+    // Add background.
     {
         // Create a root actor for the dialog.
-        UICanvas* canvas = UIUtil::NewUIActorWithCanvas(parent, 2);
+        UICanvas* canvas = UI::CreateCanvas("SidneyFiles", parent, 2);
+        canvas->GetRectTransform()->SetAnchor(AnchorPreset::TopLeft);
         mWindowRoot = canvas->GetOwner();
         mWindowRoot->AddComponent<UINineSlice>(SidneyUtil::GetGrayBoxParams(Color32::Black));
 
@@ -301,7 +306,7 @@ void SidneyFiles::FileListWindow::Init(Actor* parent, bool forShapes)
         mWindowRoot->GetComponent<UIImage>()->SetReceivesInput(true);
 
         // Set to correct size. Position is set when shown.
-        canvas->GetRectTransform()->SetSizeDelta(153.0f, 350.0f);
+        canvas->GetRectTransform()->SetSizeDelta(154.0f, 350.0f);
     }
 
     // Add close button.
@@ -312,13 +317,13 @@ void SidneyFiles::FileListWindow::Init(Actor* parent, bool forShapes)
     // Add title/header.
     {
         // Add one line divider for bottom of header.
-        UIImage* headerDividerImage = UIUtil::NewUIActorWithWidget<UIImage>(mWindowRoot);
+        UIImage* headerDividerImage = UI::CreateWidgetActor<UIImage>("Divider", mWindowRoot);
         headerDividerImage->SetTexture(gAssetManager.LoadTexture("S_BOX_TOP.BMP"), true);
         headerDividerImage->GetRectTransform()->SetAnchor(AnchorPreset::TopStretch);
         headerDividerImage->GetRectTransform()->SetAnchoredPosition(0.0f, -20.0f);
         headerDividerImage->GetRectTransform()->SetSizeDeltaX(0.0f);
 
-        UILabel* titleLabel = UIUtil::NewUIActorWithWidget<UILabel>(mWindowRoot);
+        UILabel* titleLabel = UI::CreateWidgetActor<UILabel>("Title", mWindowRoot);
         titleLabel->GetRectTransform()->SetAnchor(AnchorPreset::TopStretch);
         titleLabel->GetRectTransform()->SetAnchoredPosition(0.0f, -2.0f);
         titleLabel->GetRectTransform()->SetSizeDelta(0.0f, 20.0f);
@@ -331,6 +336,20 @@ void SidneyFiles::FileListWindow::Init(Actor* parent, bool forShapes)
         mTitleLabel = titleLabel;
     }
 
+    // Over the course of the game, you may gather more files than can fit in the file window.
+    // To accommodate this, we need a scroll area.
+    // Create a canvas with masking for the scroll area.
+    UICanvas* canvas = UI::CreateCanvas("ScrollCanvas", mWindowRoot, 3);
+    canvas->SetMasked(true);
+    canvas->GetRectTransform()->SetAnchor(AnchorPreset::TopLeft);
+    canvas->GetRectTransform()->SetAnchoredPosition(0.0f, -21.0f);
+    canvas->GetRectTransform()->SetSizeDelta(153.0f, 328.0f);
+
+    // Create scroll area that fills up the canvas.
+    mScrollRect = new UIScrollRect(canvas->GetOwner());
+    mScrollRect->GetRectTransform()->SetAnchor(AnchorPreset::CenterStretch);
+    mScrollRect->GetRectTransform()->SetSizeDelta(0.0f, 0.0f);
+
     // Hide by default.
     mWindowRoot->SetActive(false);
 }
@@ -338,7 +357,6 @@ void SidneyFiles::FileListWindow::Init(Actor* parent, bool forShapes)
 void SidneyFiles::FileListWindow::Show(std::vector<SidneyFile>& files, const std::vector<SidneyDirectory>& data, std::function<void(SidneyFile*)> selectCallback)
 {
     // Reset to default position.
-    mWindowRoot->GetComponent<RectTransform>()->SetAnchor(AnchorPreset::TopLeft);
     mWindowRoot->GetComponent<RectTransform>()->SetAnchoredPosition(40.0f, -66.0f);
 
     // Show the window.
@@ -352,8 +370,11 @@ void SidneyFiles::FileListWindow::Show(std::vector<SidneyFile>& files, const std
     }
     mButtonIndex = 0;
 
+    // Make sure scroll rect is positioned at top.
+    mScrollRect->SetNormalizedScrollValue(0.0f);
+
     // Iterate and place each label.
-    Vector2 topLeft(10.0f, -28.0f);
+    Vector2 topLeft(10.0f, -8.0f);
     for(auto& dir : data)
     {
         // Only show shapes if this is the shapes list.
@@ -418,13 +439,16 @@ void SidneyFiles::FileListWindow::Show(std::vector<SidneyFile>& files, const std
             {
                 fileButton.label->SetText("  " + file->GetDisplayName());
                 topLeft.y -= 16.0f;
-            }   
+            }
         }
     }
 }
 
 void SidneyFiles::FileListWindow::Show(const std::string& title, const std::vector<std::string>& choices, std::function<void(size_t)> selectCallback)
 {
+    // Reset to default position.
+    mWindowRoot->GetComponent<RectTransform>()->SetAnchoredPosition(40.0f, -66.0f);
+
     // Show the window.
     mWindowRoot->SetActive(true);
 
@@ -468,7 +492,7 @@ SidneyFiles::FileListButton& SidneyFiles::FileListWindow::GetFileListButton()
     if(mButtonIndex >= mButtons.size())
     {
         Actor* labelActor = new Actor(TransformType::RectTransform);
-        labelActor->GetTransform()->SetParent(mWindowRoot->GetTransform());
+        labelActor->GetTransform()->SetParent(mScrollRect->GetRectTransform());
 
         UILabel* label = labelActor->AddComponent<UILabel>();
         label->GetRectTransform()->SetPivot(0.0f, 1.0f); // Top-Left

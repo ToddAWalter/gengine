@@ -211,6 +211,11 @@ void CharacterManager::Init()
                         {
                             faceConfig.mouthSize = entry.GetValueAsVector2();
                         }
+                        else if(StringUtil::EqualsIgnoreCase(entry.key, "Face Name"))
+                        {
+                            // In some cases, the face texture name doesn't follow convention and is obtained from a specific key in the ini section.
+                            faceConfig.faceTexture = gAssetManager.LoadSceneTexture(entry.value);
+                        }
                     }
                 }
             }
@@ -218,7 +223,7 @@ void CharacterManager::Init()
             // Done with this asset.
             delete textFile;
         }
-        
+
         // Read in characters.
         {
             // Get CHARACTERS text file as a raw buffer.
@@ -226,7 +231,7 @@ void CharacterManager::Init()
 
             // Pass that along to INI parser, since it is plain text and in INI format.
             IniParser parser(textFile->GetText(), textFile->GetTextLength());
-            
+
             // Read one section at a time.
             // Each section correlates to one character.
             // The section name is the character's three-letter code (GAB, ABE, GRA, etc).
@@ -379,12 +384,12 @@ void CharacterManager::Init()
 
 CharacterConfig& CharacterManager::GetCharacterConfig(const std::string& identifier)
 {
-	auto it = mCharacterConfigs.find(identifier);
-	if(it != mCharacterConfigs.end())
-	{
+    auto it = mCharacterConfigs.find(identifier);
+    if(it != mCharacterConfigs.end())
+    {
         return it->second;
-	}
-	return mDefaultCharacterConfig;
+    }
+    return mDefaultCharacterConfig;
 }
 
 bool CharacterManager::IsValidName(const std::string& name)
@@ -392,10 +397,10 @@ bool CharacterManager::IsValidName(const std::string& name)
     std::string key = name;
     StringUtil::ToUpper(key);
 
-	if(mCharacterNouns.find(key) == mCharacterNouns.end())
-	{
-		gReportManager.Log("Error", StringUtil::Format("Error: who the hell is '%s'?", name.c_str()));
-		return false;
-	}
-	return true;
+    if(mCharacterNouns.find(key) == mCharacterNouns.end())
+    {
+        gReportManager.Log("Error", StringUtil::Format("Error: who the hell is '%s'?", name.c_str()));
+        return false;
+    }
+    return true;
 }

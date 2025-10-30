@@ -1,6 +1,7 @@
 #include "Chessboard.h"
 
 #include "ActionManager.h"
+#include "Animator.h"
 #include "AssetManager.h"
 #include "GameCamera.h"
 #include "GameProgress.h"
@@ -12,7 +13,7 @@
 
 Chessboard::Chessboard() : Actor("Chessboard")
 {
-    Reset(false);
+    // Do nothing here - the game calls "Reset(false)" on scene enter or on retry.
 }
 
 void Chessboard::Reset(bool swordsGlow)
@@ -64,12 +65,16 @@ void Chessboard::Reset(bool swordsGlow)
     // No swords yet.
     gGameProgress.SetGameVariable("Te1SwordCount", 0);
     mSwordCount = 0;
+
+    // Make sure goal door is closed again, if it was opened and we then died.
+    Animation* doorOpenAnim = gAssetManager.LoadAnimation("Te1GoDoor", AssetScope::Scene);
+    gSceneManager.GetScene()->GetAnimator()->Sample(doorOpenAnim, 0);
 }
 
 void Chessboard::Takeoff()
 {
     // This function is called just as Gabe is about to jump to a new tile.
-    
+
     // First, get the row/col of the tile being jumped from.
     int row = gGameProgress.GetGameVariable("Te1GabeRow");
     int col = gGameProgress.GetGameVariable("Te1GabeColumn");
@@ -161,6 +166,19 @@ void Chessboard::BadLand()
     OpenTrapdoor(row, col);
 }
 
+void Chessboard::OnPersist(PersistState& ps)
+{
+    for(int x = 0; x < 8; ++x)
+    {
+        for(int y = 0; y < 8; ++y)
+        {
+            ps.Xfer("", mLandedCounts[x][y]);
+        }
+    }
+
+    ps.Xfer(PERSIST_VAR(mSwordCount));
+}
+
 void Chessboard::OnUpdate(float deltaTime)
 {
     // The code below updates which tile the mouse is hovering, whether it's a valid move, and what animation to use when jumping to it.
@@ -172,7 +190,7 @@ void Chessboard::OnUpdate(float deltaTime)
     // Get the object hovered by the mouse cursor, if any.
     Ray ray = gSceneManager.GetScene()->GetCamera()->GetSceneRayAtMousePos();
     SceneCastResult result = gSceneManager.GetScene()->Raycast(ray, false);
-    
+
     const int kValidMoveType = 1;
     const int kInvalidMoveType = 2;
     GKObject* hoveredObject = result.hitObject;
@@ -187,14 +205,14 @@ void Chessboard::OnUpdate(float deltaTime)
             int row = hoveredObjectName[9] - '1';
             //printf("Row %d, Col %d\n", row, col);
 
-            // Save last clicked row/col.
+            // Save last hovered row/col.
             gGameProgress.SetGameVariable("Te1TileRow", row);
             gGameProgress.SetGameVariable("Te1TileColumn", col);
-            
+
             // Figure out valid row/col moves from Gabe's current position.
             int gabeRow = gGameProgress.GetGameVariable("Te1GabeRow");
             int gabeCol = gGameProgress.GetGameVariable("Te1GabeColumn");
-            
+
             // Here's an easy case for the start of the puzzle:
             // If Gabe's not yet on the board, the only valid move is to the first row.
             if(gabeRow < 0)
@@ -332,29 +350,40 @@ void Chessboard::OnUpdate(float deltaTime)
         }
     }
 
-    // Handle edge case where Gabe is on the chessboard, but wants to jump off.
-    // This can be a method for the player to reset the puzzle.
-    // Player must be on the board, and must hover over the floor outside the chessboard area.
-    if(gGameProgress.GetGameVariable("Te1GabeRow") >= 0 && StringUtil::EqualsIgnoreCase(result.hitInfo.name, "te1tilefloor"))
+    // If Gabe is on the Chessboard, deal with clicks on the floor area.
+    // This requires some special processing so that Gabe doesn't just try to walk in an invalid way for the puzzle.
+    if(gGameProgress.GetGameVariable("Te1GabeRow") >= 0)
     {
+        bool hoveringTileFloor = StringUtil::EqualsIgnoreCase(result.hitInfo.name, "te1tilefloor");
+        bool hoveringHitTestFloor = StringUtil::EqualsIgnoreCase(result.hitInfo.name, "te1_hittestfloor") ||
+                                    StringUtil::EqualsIgnoreCase(result.hitInfo.name, "te1flooredges") ||
+                                    StringUtil::EqualsIgnoreCase(result.hitInfo.name, "te1_floorstand");
+
         // Turn off normal scene interaction so that clicking doesn't elicit the normal walk behavior.
-        gSceneManager.GetScene()->GetCamera()->SetSceneInteractEnabled(false);
-
-        // If a click is done, attempt to jump off the chessboard, back to safety.
-        if(gInputManager.IsMouseButtonTrailingEdge(InputManager::MouseButton::Left))
+        if(hoveringTileFloor || hoveringHitTestFloor)
         {
-            // If not in the first row, it's impossible to jump back. Set as an invalid move.
-            if(gGameProgress.GetGameVariable("Te1GabeRow") == 0)
-            {
-                gGameProgress.SetGameVariable("Te1MoveType", kValidMoveType);
-            }
-            else
-            {
-                gGameProgress.SetGameVariable("Te1MoveType", kInvalidMoveType);
-            }
+            gSceneManager.GetScene()->GetCamera()->SetSceneInteractEnabled(false);
+        }
 
-            // Execute the scene jump action, which will either send you to safety or illicit an "it's too far away" response.
-            gActionManager.ExecuteAction(gActionManager.GetAction("SCENE", "JUMP"));
+        // Gabe can only attempt to escape by clicking the tile floor.
+        if(hoveringTileFloor)
+        {
+            // If a click is done, attempt to jump off the chessboard, back to safety.
+            if(gInputManager.IsMouseButtonTrailingEdge(InputManager::MouseButton::Left))
+            {
+                // If not in the first row, it's impossible to jump back. Set as an invalid move.
+                if(gGameProgress.GetGameVariable("Te1GabeRow") == 0)
+                {
+                    gGameProgress.SetGameVariable("Te1MoveType", kValidMoveType);
+                }
+                else
+                {
+                    gGameProgress.SetGameVariable("Te1MoveType", kInvalidMoveType);
+                }
+
+                // Execute the scene jump action, which will either send you to safety or illicit an "it's too far away" response.
+                gActionManager.ExecuteAction("SCENE", "JUMP");
+            }
         }
     }
 }

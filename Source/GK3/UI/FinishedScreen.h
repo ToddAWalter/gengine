@@ -6,6 +6,11 @@
 #pragma once
 #include "Actor.h"
 
+#include "WaitForNoInput.h"
+
+class UICanvas;
+class UIImage;
+
 class FinishedScreen : public Actor
 {
 public:
@@ -17,10 +22,14 @@ protected:
     void OnUpdate(float deltaTime) override;
 
 private:
-    // To avoid accidentally dismissing the screen (and quitting the game) right when the screen shows...
-    // Wait a short amount of time before checking for inputs to quit the game.
-    const float mInputDelayDuration = 2.0f;
-    float mInputDelayTimer = 0.0f;
+    // The canvas for this screen.
+    UICanvas* mCanvas = nullptr;
 
-    bool mWaitingForNoInput = false;
+    // The main thing on this screen is a big image.
+    UIImage* mBackgroundImage = nullptr;
+
+    // Helper to only dismiss this screen after no inputs are detected.
+    WaitForNoInput mWaitForNoInput;
+
+    void RefreshUIScaling();
 };

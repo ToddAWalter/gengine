@@ -1,5 +1,6 @@
 #include "LocationManager.h"
 
+#include "ActionManager.h"
 #include "AssetManager.h"
 #include "GameProgress.h"
 #include "GK3UI.h"
@@ -16,19 +17,19 @@ LocationManager gLocationManager;
 
 void LocationManager::Init()
 {
-	// Parse as INI file.
+    // Parse as INI file.
     TextAsset* textFile = gAssetManager.LoadText("Locations.txt", AssetScope::Manual);
-	IniParser parser(textFile->GetText(), textFile->GetTextLength());
-	parser.ParseAll();
-	
-	IniSection locations = parser.GetSection("LOCATIONS");
-	for(auto& line : locations.lines)
-	{
-		IniKeyValue& entry = line.entries.front();
-		mLocCodeShortToLocCodeLong[entry.key] = entry.value;
+    IniParser parser(textFile->GetText(), textFile->GetTextLength());
+    parser.ParseAll();
+
+    IniSection locations = parser.GetSection("LOCATIONS");
+    for(auto& line : locations.lines)
+    {
+        IniKeyValue& entry = line.entries.front();
+        mLocCodeShortToLocCodeLong[entry.key] = entry.value;
     }
     delete textFile;
-    
+
     //TEMP: Kind of handy to read in all BSPs at once - to test unknown values and such.
     /*
     std::vector<std::string> allBsp = {
@@ -166,20 +167,20 @@ void LocationManager::Update()
 
 bool LocationManager::IsValidLocation(const std::string& locationCode) const
 {
-	// All location codes are 3 characters exactly.
-	if(locationCode.length() != 3) { return false; }
-	
-	bool isValid = mLocCodeShortToLocCodeLong.find(locationCode) != mLocCodeShortToLocCodeLong.end();
-	if(!isValid)
-	{
-		gReportManager.Log("Error", "Error: '" + locationCode + "' is not a valid location name. Call DumpLocations() to see valid locations.");
-	}
-	return isValid;
+    // All location codes are 3 characters exactly.
+    if(locationCode.length() != 3) { return false; }
+
+    bool isValid = mLocCodeShortToLocCodeLong.find(locationCode) != mLocCodeShortToLocCodeLong.end();
+    if(!isValid)
+    {
+        gReportManager.Log("Error", "Error: '" + locationCode + "' is not a valid location name. Call DumpLocations() to see valid locations.");
+    }
+    return isValid;
 }
 
 void LocationManager::DumpLocations() const
 {
-	//TODO
+    //TODO
 }
 
 void LocationManager::ChangeLocation(const std::string& location, std::function<void()> callback)
@@ -212,88 +213,88 @@ std::string LocationManager::GetLocationDisplayName(const std::string& location)
 
 int LocationManager::GetLocationCountAcrossAllTimeblocks(const std::string& actorName, const std::string& location)
 {
-	return mActorLocationCounts[actorName + location];
+    return mActorLocationCounts[actorName + location];
 }
 
 int LocationManager::GetCurrentLocationCountForCurrentTimeblock(const std::string& actorName) const
 {
-	return GetLocationCount(actorName, mLocation, gGameProgress.GetTimeblock());
+    return GetLocationCount(actorName, mLocation, gGameProgress.GetTimeblock());
 }
 
 int LocationManager::GetLocationCountForCurrentTimeblock(const std::string& actorName, const std::string& location) const
 {
-	return GetLocationCount(actorName, location, gGameProgress.GetTimeblock());
+    return GetLocationCount(actorName, location, gGameProgress.GetTimeblock());
 }
 
 int LocationManager::GetLocationCount(const std::string& actorName, const std::string& location, const Timeblock& timeblock) const
 {
-	return GetLocationCount(actorName, location, timeblock.ToString());
+    return GetLocationCount(actorName, location, timeblock.ToString());
 }
 
 int LocationManager::GetLocationCount(const std::string& actorName, const std::string& location, const std::string& timeblock) const
 {
-	// Either return stored value, or 0 by default.
-	auto it = mActorLocationTimeblockCounts.find(actorName + location + timeblock);
-	if(it != mActorLocationTimeblockCounts.end())
-	{
-		return it->second;
-	}
-	return 0;
+    // Either return stored value, or 0 by default.
+    auto it = mActorLocationTimeblockCounts.find(actorName + location + timeblock);
+    if(it != mActorLocationTimeblockCounts.end())
+    {
+        return it->second;
+    }
+    return 0;
 }
 
 void LocationManager::IncCurrentLocationCountForCurrentTimeblock(const std::string& actorName)
 {
-	IncLocationCount(actorName, mLocation, gGameProgress.GetTimeblock());
+    IncLocationCount(actorName, mLocation, gGameProgress.GetTimeblock());
 }
 
 void LocationManager::IncLocationCountForCurrentTimeblock(const std::string &actorName, const std::string &location)
 {
-	IncLocationCount(actorName, mLocation, gGameProgress.GetTimeblock());
+    IncLocationCount(actorName, mLocation, gGameProgress.GetTimeblock());
 }
 
 void LocationManager::IncLocationCount(const std::string& actorName, const std::string& location, const Timeblock& timeblock)
 {
-	IncLocationCount(actorName, location, timeblock.ToString());
+    IncLocationCount(actorName, location, timeblock.ToString());
 }
 
 void LocationManager::IncLocationCount(const std::string& actorName, const std::string& location, const std::string& timeblock)
 {
-	// Increment global location count. Lowercase for consistency.
-	++mActorLocationCounts[actorName + location];
-	
-	// Increment timeblock-specific location count. Lowercase for consistency.
-	++mActorLocationTimeblockCounts[actorName + location + timeblock];
+    // Increment global location count. Lowercase for consistency.
+    ++mActorLocationCounts[actorName + location];
+
+    // Increment timeblock-specific location count. Lowercase for consistency.
+    ++mActorLocationTimeblockCounts[actorName + location + timeblock];
 }
 
 void LocationManager::SetLocationCountForCurrentTimeblock(const std::string& actorName, const std::string& location, int count)
 {
-	// Get current timeblock as string.
-	std::string timeblock = gGameProgress.GetTimeblock().ToString();
+    // Get current timeblock as string.
+    std::string timeblock = gGameProgress.GetTimeblock().ToString();
 
-	// Increment timeblock-specific location count. This version should NOT change the global one!
-	mActorLocationTimeblockCounts[actorName + location + timeblock] = count;
+    // Increment timeblock-specific location count. This version should NOT change the global one!
+    mActorLocationTimeblockCounts[actorName + location + timeblock] = count;
 }
 
 void LocationManager::SetActorLocation(const std::string& actorName, const std::string& location)
 {
-	if(location.empty())
-	{
-		SetActorOffstage(actorName);
-	}
-	else
-	{
-		mActorLocations[actorName] = location;
-	}
+    if(location.empty())
+    {
+        SetActorOffstage(actorName);
+    }
+    else
+    {
+        mActorLocations[actorName] = location;
+    }
 }
 
 std::string LocationManager::GetActorLocation(const std::string& actorName) const
 {
-	auto it = mActorLocations.find(actorName);
-	if(it != mActorLocations.end())
-	{
-		return it->second;
-	}
-	return "";
+    auto it = mActorLocations.find(actorName);
+    if(it != mActorLocations.end())
+    {
+        return it->second;
+    }
+    return "";
 }
 
 bool LocationManager::IsActorAtLocation(const std::string& actorName, const std::string& location) const
@@ -308,17 +309,17 @@ bool LocationManager::IsActorAtLocation(const std::string& actorName, const std:
 
 void LocationManager::SetActorOffstage(const std::string& actorName)
 {
-	auto it = mActorLocations.find(actorName);
-	if(it != mActorLocations.end())
-	{
-		mActorLocations.erase(it);
-	}
+    auto it = mActorLocations.find(actorName);
+    if(it != mActorLocations.end())
+    {
+        mActorLocations.erase(it);
+    }
 }
 
 bool LocationManager::IsActorOffstage(const std::string& actorName) const
 {
-	auto it = mActorLocations.find(actorName);
-	return it == mActorLocations.end();
+    auto it = mActorLocations.find(actorName);
+    return it == mActorLocations.end();
 }
 
 void LocationManager::OnPersist(PersistState& ps)
@@ -331,13 +332,16 @@ void LocationManager::OnPersist(PersistState& ps)
     ps.Xfer(PERSIST_VAR(mActorLocations));
 }
 
-void LocationManager::ChangeLocationInternal(const std::string& location, std::function<void()> callback)
+void LocationManager::ChangeLocationInternal(const std::string& location, const std::function<void()>& callback)
 {
     // Show scene transitioner (except when transitioning from the Map screen).
     if(!StringUtil::EqualsIgnoreCase(mLocation, "map"))
     {
         gGK3UI.ShowSceneTransitioner();
     }
+
+    // If the action bar is up, it should close on a scene change.
+    gActionManager.HideActionBar(false);
 
     // Set new location.
     // This is important to do BEFORE checking for timeblock completion, as that logic looks for locations sometimes.
@@ -348,21 +352,27 @@ void LocationManager::ChangeLocationInternal(const std::string& location, std::f
     //HACK: Fixes premature timeblock completion in 102P if last action performed is follow.
     if(gGK3UI.FollowingOnDrivingScreen())
     {
-        // Change scene and done.
-        gSceneManager.LoadScene(mChangeLocationTo, [callback](){
-            gGK3UI.HideSceneTransitioner();
-            if(callback != nullptr) { callback(); }
-        });
+        LoadScene(location, callback);
         return;
     }
 
     // Check for timeblock completion.
-    gSheepManager.Execute(gAssetManager.LoadSheep("Timeblocks.shp"), "CheckTimeblockComplete$", [location, callback, sameLocation](){
+    gSheepManager.Execute(gAssetManager.LoadSheep("Timeblocks.shp"), "CheckTimeblockComplete$", [this, location, callback, sameLocation](){
 
         // See whether a timeblock change is occurring.
         // If so, we should early out - the timeblock change logic handles any location and time change.
         if(gGameProgress.IsChangingTimeblock())
         {
+            // Usually, GK3 doesn't allow location & last location to be the same place.
+            // But at the beginning of Day 3 12PM, the initial position logic for Grace DEPENDS ON mLastLocation and mLocation being the same.
+            // There may be a more elegant generalized way to handle this (e.g. on new timeblock, if switching ego, set last location to actor's location in mActorLocations).
+            // But for now, this targeted HACK does the trick!
+            if(gGameProgress.GetTimeblock() == Timeblock(2, 14) || gGameProgress.GetTimeblock() == Timeblock(3, 10))
+            {
+                mLastLocation = location;
+            }
+
+            // Early out and let timeblock code handle this.
             gGK3UI.HideSceneTransitioner();
             if(callback != nullptr) { callback(); }
             return;
@@ -376,11 +386,15 @@ void LocationManager::ChangeLocationInternal(const std::string& location, std::f
         }
         else
         {
-            // Otherwise, we can move ahead with changing the scene.
-            gSceneManager.LoadScene(location, [callback](){
-                gGK3UI.HideSceneTransitioner();
-                if(callback != nullptr) { callback(); }
-            });
+            LoadScene(location, callback);
         }
+    });
+}
+
+void LocationManager::LoadScene(const std::string& location, const std::function<void()>& callback)
+{
+    gSceneManager.LoadScene(location, [callback](){
+        gGK3UI.HideSceneTransitioner();
+        if(callback != nullptr) { callback(); }
     });
 }

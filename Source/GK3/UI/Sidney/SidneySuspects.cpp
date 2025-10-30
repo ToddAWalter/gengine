@@ -5,19 +5,21 @@
 #include "AssetManager.h"
 #include "Font.h"
 #include "GameProgress.h"
+#include "GK3UI.h"
 #include "Scene.h"
 #include "SidneyButton.h"
 #include "SidneyFiles.h"
 #include "SidneyPopup.h"
 #include "SidneyUtil.h"
 #include "Texture.h"
+#include "Timers.h"
 #include "UIButton.h"
 #include "UIImage.h"
 #include "UILabel.h"
 #include "UINineSlice.h"
 #include "UITextInput.h"
 #include "UIUtil.h"
-#include "VideoPlayer.h"
+#include "UIVideoImage.h"
 
 void SidneySuspects::Init(Actor* parent, SidneyFiles* sidneyFiles)
 {
@@ -33,7 +35,7 @@ void SidneySuspects::Init(Actor* parent, SidneyFiles* sidneyFiles)
     });
 
     // Add menu bar.
-    mMenuBar.Init(mRoot, SidneyUtil::GetSuspectsLocalizer().GetText("ScreenName"), 124.0f);
+    mMenuBar.Init(mRoot, SidneyUtil::GetSuspectsLocalizer().GetText("ScreenName"));
 
     // File menu.
     mMenuBar.AddDropdown(SidneyUtil::GetSuspectsLocalizer().GetText("Menu1Name"));
@@ -64,7 +66,7 @@ void SidneySuspects::Init(Actor* parent, SidneyFiles* sidneyFiles)
     mMenuBar.AddDropdownChoice(SidneyUtil::GetSuspectsLocalizer().GetText("Menu3Item2"), [this](){
         OnUnlinkToSuspectPressed();
     });
-    //TODO: separator
+    mMenuBar.AddDropdownChoiceSeparator();
     mMenuBar.AddDropdownChoice(SidneyUtil::GetSuspectsLocalizer().GetText("Menu3Item4"), [this](){
         OnMatchAnalysisPressed();
     });
@@ -73,7 +75,7 @@ void SidneySuspects::Init(Actor* parent, SidneyFiles* sidneyFiles)
     Font* font = gAssetManager.LoadFont("SID_TEXT_14.FON");
     {
         // Window border.
-        UINineSlice* windowBorder = UIUtil::NewUIActorWithWidget<UINineSlice>(mRoot, SidneyUtil::GetGrayBoxParams(SidneyUtil::TransBgColor));
+        UINineSlice* windowBorder = UI::CreateWidgetActor<UINineSlice>("Window", mRoot, SidneyUtil::GetGrayBoxParams(SidneyUtil::TransBgColor));
         windowBorder->GetRectTransform()->SetAnchor(AnchorPreset::BottomLeft);
         windowBorder->GetRectTransform()->SetAnchoredPosition(181.0f, 63.0f);
         windowBorder->GetRectTransform()->SetSizeDelta(432.0f, 325.0f);
@@ -81,7 +83,7 @@ void SidneySuspects::Init(Actor* parent, SidneyFiles* sidneyFiles)
         mSuspectDataWindow->SetActive(false);
 
         // Add header divider border.
-        UIImage* headerDividerImage = UIUtil::NewUIActorWithWidget<UIImage>(windowBorder->GetOwner());
+        UIImage* headerDividerImage = UI::CreateWidgetActor<UIImage>("Divider", windowBorder);
         headerDividerImage->SetTexture(gAssetManager.LoadTexture("S_BOX_TOP.BMP"), true);
         headerDividerImage->GetRectTransform()->SetAnchor(AnchorPreset::TopStretch);
         headerDividerImage->GetRectTransform()->SetAnchoredPosition(0.0f, -76.0f);
@@ -89,12 +91,12 @@ void SidneySuspects::Init(Actor* parent, SidneyFiles* sidneyFiles)
 
         // Add fingerprint area.
         {
-            UINineSlice* fingerprintArea = UIUtil::NewUIActorWithWidget<UINineSlice>(windowBorder->GetOwner(), SidneyUtil::GetGrayBoxParams(SidneyUtil::TransBgColor));
+            UINineSlice* fingerprintArea = UI::CreateWidgetActor<UINineSlice>("FingerprintBox", windowBorder, SidneyUtil::GetGrayBoxParams(SidneyUtil::TransBgColor));
             fingerprintArea->GetRectTransform()->SetAnchor(AnchorPreset::TopLeft);
             fingerprintArea->GetRectTransform()->SetSizeDelta(70.0f, 77.0f);
 
             // Add image for fingerprint.
-            mFingerprintImage = UIUtil::NewUIActorWithWidget<UIImage>(fingerprintArea->GetOwner());
+            mFingerprintImage = UI::CreateWidgetActor<UIImage>("Fingerprint", fingerprintArea);
             mFingerprintImage->GetRectTransform()->SetAnchor(AnchorPreset::TopLeft);
             mFingerprintImage->GetRectTransform()->SetAnchoredPosition(14.0f, -13.0f);
             mFingerprintImage->GetRectTransform()->SetSizeDelta(41.0f, 51.0f);
@@ -105,19 +107,19 @@ void SidneySuspects::Init(Actor* parent, SidneyFiles* sidneyFiles)
         {
             // Name
             {
-                UILabel* nameLabel = UIUtil::NewUIActorWithWidget<UILabel>(mSuspectDataWindow);
+                UILabel* nameLabel = UI::CreateWidgetActor<UILabel>("NameLabel", mSuspectDataWindow);
                 nameLabel->SetFont(font);
                 nameLabel->SetText(SidneyUtil::GetSuspectsLocalizer().GetText("Name"));
                 nameLabel->GetRectTransform()->SetAnchor(AnchorPreset::TopLeft);
                 nameLabel->GetRectTransform()->SetAnchoredPosition(78.0f, -12.0f);
                 nameLabel->GetRectTransform()->SetSizeDelta(nameLabel->GetTextWidth(), font->GetGlyphHeight());
 
-                UINineSlice* nameBorder = UIUtil::NewUIActorWithWidget<UINineSlice>(mSuspectDataWindow, SidneyUtil::GetGrayBoxParams(Color32::Black));
+                UINineSlice* nameBorder = UI::CreateWidgetActor<UINineSlice>("NameBox", mSuspectDataWindow, SidneyUtil::GetGrayBoxParams(Color32::Black));
                 nameBorder->GetRectTransform()->SetSizeDelta(245.0f, 18.0f);
                 nameBorder->GetRectTransform()->SetAnchor(AnchorPreset::TopLeft);
                 nameBorder->GetRectTransform()->SetAnchoredPosition(178.0f, -10.0f);
 
-                mNameLabel = UIUtil::NewUIActorWithWidget<UILabel>(nameBorder->GetOwner());
+                mNameLabel = UI::CreateWidgetActor<UILabel>("NameValueLabel", nameBorder->GetOwner());
                 mNameLabel->SetFont(font);
                 mNameLabel->GetRectTransform()->SetAnchor(AnchorPreset::CenterStretch);
                 mNameLabel->GetRectTransform()->SetSizeDelta(-8.0f, -3.0f);
@@ -125,19 +127,19 @@ void SidneySuspects::Init(Actor* parent, SidneyFiles* sidneyFiles)
 
             // Nationality
             {
-                UILabel* nationalityLabel = UIUtil::NewUIActorWithWidget<UILabel>(mSuspectDataWindow);
+                UILabel* nationalityLabel = UI::CreateWidgetActor<UILabel>("NationalityLabel", mSuspectDataWindow);
                 nationalityLabel->SetFont(font);
                 nationalityLabel->SetText(SidneyUtil::GetSuspectsLocalizer().GetText("Nationality"));
                 nationalityLabel->GetRectTransform()->SetAnchor(AnchorPreset::TopLeft);
                 nationalityLabel->GetRectTransform()->SetAnchoredPosition(78.0f, -32.0f);
                 nationalityLabel->GetRectTransform()->SetSizeDelta(nationalityLabel->GetTextWidth(), font->GetGlyphHeight());
 
-                UINineSlice* nationalityBorder = UIUtil::NewUIActorWithWidget<UINineSlice>(mSuspectDataWindow, SidneyUtil::GetGrayBoxParams(Color32::Black));
+                UINineSlice* nationalityBorder = UI::CreateWidgetActor<UINineSlice>("NationalityBox", mSuspectDataWindow, SidneyUtil::GetGrayBoxParams(Color32::Black));
                 nationalityBorder->GetRectTransform()->SetSizeDelta(245.0f, 18.0f);
                 nationalityBorder->GetRectTransform()->SetAnchor(AnchorPreset::TopLeft);
                 nationalityBorder->GetRectTransform()->SetAnchoredPosition(178.0f, -30.0f);
 
-                mNationalityLabel = UIUtil::NewUIActorWithWidget<UILabel>(nationalityBorder->GetOwner());
+                mNationalityLabel = UI::CreateWidgetActor<UILabel>("NationalityValueLabel", nationalityBorder);
                 mNationalityLabel->SetFont(font);
                 mNationalityLabel->GetRectTransform()->SetAnchor(AnchorPreset::CenterStretch);
                 mNationalityLabel->GetRectTransform()->SetSizeDelta(-8.0f, -3.0f);
@@ -145,19 +147,19 @@ void SidneySuspects::Init(Actor* parent, SidneyFiles* sidneyFiles)
 
             // Vehicle ID
             {
-                UILabel* vehicleLabel = UIUtil::NewUIActorWithWidget<UILabel>(mSuspectDataWindow);
+                UILabel* vehicleLabel = UI::CreateWidgetActor<UILabel>("VehicleLabel", mSuspectDataWindow);
                 vehicleLabel->SetFont(font);
                 vehicleLabel->SetText(SidneyUtil::GetSuspectsLocalizer().GetText("Vehicle"));
                 vehicleLabel->GetRectTransform()->SetAnchor(AnchorPreset::TopLeft);
                 vehicleLabel->GetRectTransform()->SetAnchoredPosition(78.0f, -52.0f);
                 vehicleLabel->GetRectTransform()->SetSizeDelta(vehicleLabel->GetTextWidth(), font->GetGlyphHeight());
 
-                UINineSlice* vehicleBorder = UIUtil::NewUIActorWithWidget<UINineSlice>(mSuspectDataWindow, SidneyUtil::GetGrayBoxParams(Color32::Black));
+                UINineSlice* vehicleBorder = UI::CreateWidgetActor<UINineSlice>("VehicleBox", mSuspectDataWindow, SidneyUtil::GetGrayBoxParams(Color32::Black));
                 vehicleBorder->GetRectTransform()->SetSizeDelta(245.0f, 18.0f);
                 vehicleBorder->GetRectTransform()->SetAnchor(AnchorPreset::TopLeft);
                 vehicleBorder->GetRectTransform()->SetAnchoredPosition(178.0f, -50.0f);
 
-                mVehicleLabel = UIUtil::NewUIActorWithWidget<UILabel>(vehicleBorder->GetOwner());
+                mVehicleLabel = UI::CreateWidgetActor<UILabel>("VehicleValueLabel", vehicleBorder);
                 mVehicleLabel->SetFont(font);
                 mVehicleLabel->GetRectTransform()->SetAnchor(AnchorPreset::CenterStretch);
                 mVehicleLabel->GetRectTransform()->SetSizeDelta(-8.0f, -3.0f);
@@ -166,14 +168,14 @@ void SidneySuspects::Init(Actor* parent, SidneyFiles* sidneyFiles)
 
         // Notes section.
         {
-            // Add notes header.
-            UINineSlice* notesHeaderBorder = UIUtil::NewUIActorWithWidget<UINineSlice>(windowBorder->GetOwner(), SidneyUtil::GetGrayBoxParams(SidneyUtil::TransBgColor));
+            // Add notes border.
+            UINineSlice* notesHeaderBorder = UI::CreateWidgetActor<UINineSlice>("NotesBox", windowBorder, SidneyUtil::GetGrayBoxParams(SidneyUtil::TransBgColor));
             notesHeaderBorder->GetRectTransform()->SetAnchor(AnchorPreset::TopLeft);
             notesHeaderBorder->GetRectTransform()->SetAnchoredPosition(0.0f, -76.0f);
             notesHeaderBorder->GetRectTransform()->SetSizeDelta(57.0f, 18.0f);
 
             // Add notes label.
-            UILabel* notesHeaderLabel = UIUtil::NewUIActorWithWidget<UILabel>(notesHeaderBorder->GetOwner());
+            UILabel* notesHeaderLabel = UI::CreateWidgetActor<UILabel>("NotesHeaderLabel", notesHeaderBorder);
             notesHeaderLabel->SetFont(font);
             notesHeaderLabel->SetText(SidneyUtil::GetSuspectsLocalizer().GetText("Notes"));
             notesHeaderLabel->GetRectTransform()->SetAnchor(AnchorPreset::TopLeft);
@@ -181,7 +183,7 @@ void SidneySuspects::Init(Actor* parent, SidneyFiles* sidneyFiles)
             notesHeaderLabel->GetRectTransform()->SetSizeDelta(48.0f, 12.0f);
 
             // Add the notes text input.
-            mNotesInput = UIUtil::NewUIActorWithWidget<UITextInput>(windowBorder->GetOwner());
+            mNotesInput = UI::CreateWidgetActor<UITextInput>("NotesInput", windowBorder);
             mNotesInput->SetMaxLength(500);
             mNotesInput->SetFont(font);
             mNotesInput->SetHorizonalAlignment(HorizontalAlignment::Left);
@@ -193,7 +195,7 @@ void SidneySuspects::Init(Actor* parent, SidneyFiles* sidneyFiles)
             mNotesInput->GetRectTransform()->SetSizeDelta(406.0f, 134.0f);
 
             // Create text input caret.
-            UIImage* caretImage = UIUtil::NewUIActorWithWidget<UIImage>(mNotesInput->GetOwner());
+            UIImage* caretImage = UI::CreateWidgetActor<UIImage>("Caret", mNotesInput);
             caretImage->SetTexture(&Texture::White);
             caretImage->SetColor(Color32(198, 170, 41));
             caretImage->GetRectTransform()->SetAnchor(AnchorPreset::BottomLeft);
@@ -206,7 +208,7 @@ void SidneySuspects::Init(Actor* parent, SidneyFiles* sidneyFiles)
         // Footer area
         {
             // Add footer divider border.
-            UIImage* footerDividerImage = UIUtil::NewUIActorWithWidget<UIImage>(windowBorder->GetOwner());
+            UIImage* footerDividerImage = UI::CreateWidgetActor<UIImage>("DividerBottom", windowBorder);
             footerDividerImage->SetTexture(gAssetManager.LoadTexture("S_BOX_TOP.BMP"), true);
             footerDividerImage->GetRectTransform()->SetAnchor(AnchorPreset::BottomStretch);
             footerDividerImage->GetRectTransform()->SetAnchoredPosition(0.0f, 74.0f);
@@ -217,19 +219,18 @@ void SidneySuspects::Init(Actor* parent, SidneyFiles* sidneyFiles)
                 for(int i = 0; i < 6; ++i)
                 {
                     // Linked item border.
-                    UINineSlice* itemBorder = UIUtil::NewUIActorWithWidget<UINineSlice>(windowBorder->GetOwner(), SidneyUtil::GetGrayBoxParams(SidneyUtil::TransBgColor));
+                    UINineSlice* itemBorder = UI::CreateWidgetActor<UINineSlice>("LinkedItem" + std::to_string(i), windowBorder, SidneyUtil::GetGrayBoxParams(SidneyUtil::TransBgColor));
                     itemBorder->GetRectTransform()->SetAnchor(AnchorPreset::BottomLeft);
                     itemBorder->GetRectTransform()->SetAnchoredPosition(i * 70.0f, 0.0f);
-                    itemBorder->GetRectTransform()->SetSizeDelta(70.0f, 74.0f);
+                    itemBorder->GetRectTransform()->SetSizeDelta(70.0f, 75.0f);
 
                     // Header border.
-                    UINineSlice* headerBorder = UIUtil::NewUIActorWithWidget<UINineSlice>(itemBorder->GetOwner(), SidneyUtil::GetGrayBoxParams(SidneyUtil::TransBgColor));
+                    UINineSlice* headerBorder = UI::CreateWidgetActor<UINineSlice>("HeaderBox", itemBorder, SidneyUtil::GetGrayBoxParams(SidneyUtil::TransBgColor));
                     headerBorder->GetRectTransform()->SetAnchor(AnchorPreset::TopLeft);
-                    headerBorder->GetRectTransform()->SetAnchoredPosition(0.0f, 0.0f);
                     headerBorder->GetRectTransform()->SetSizeDelta(70.0f, 18.0f);
 
                     // Header label.
-                    UILabel* itemLabel = UIUtil::NewUIActorWithWidget<UILabel>(itemBorder->GetOwner());
+                    UILabel* itemLabel = UI::CreateWidgetActor<UILabel>("Header", itemBorder);
                     itemLabel->SetFont(font);
                     itemLabel->SetText("Mose_Pr");
                     itemLabel->GetRectTransform()->SetAnchor(AnchorPreset::TopLeft);
@@ -237,13 +238,13 @@ void SidneySuspects::Init(Actor* parent, SidneyFiles* sidneyFiles)
                     itemLabel->GetRectTransform()->SetSizeDelta(49.0f, 14.0f);
 
                     // Image.
-                    UIImage* itemImage = UIUtil::NewUIActorWithWidget<UIImage>(itemBorder->GetOwner());
+                    UIImage* itemImage = UI::CreateWidgetActor<UIImage>("Image", itemBorder);
                     itemImage->GetRectTransform()->SetAnchor(AnchorPreset::TopLeft);
                     itemImage->GetRectTransform()->SetAnchoredPosition(19.0f, -29.0f);
                     itemImage->GetRectTransform()->SetSizeDelta(32.0f, 30.0f);
 
                     // The whole item has a button on it so it can be clicked/selected.
-                    UIButton* itemButton = UIUtil::NewUIActorWithWidget<UIButton>(itemBorder->GetOwner());
+                    UIButton* itemButton = UI::CreateWidgetActor<UIButton>("Button", itemBorder);
                     itemButton->GetRectTransform()->SetAnchor(AnchorPreset::CenterStretch);
                     itemButton->GetRectTransform()->SetSizeDelta(0.0f, 0.0f);
                     itemButton->SetPressCallback([this, i](UIButton* button){
@@ -258,7 +259,7 @@ void SidneySuspects::Init(Actor* parent, SidneyFiles* sidneyFiles)
 
                     // Hide by default.
                     mLinkedEvidenceItems[i].root->SetActive(false);
-                }   
+                }
             }
         }
     }
@@ -272,7 +273,7 @@ void SidneySuspects::Init(Actor* parent, SidneyFiles* sidneyFiles)
 
         mFilePreviewWindow->GetComponent<RectTransform>()->SetAnchor(AnchorPreset::TopLeft);
         mFilePreviewWindow->GetComponent<RectTransform>()->SetAnchoredPosition(13.0f, -92.0f);
-        
+
         mFilePreviewWindow->SetActive(false);
     }
 
@@ -282,21 +283,21 @@ void SidneySuspects::Init(Actor* parent, SidneyFiles* sidneyFiles)
     // Create match analysis window.
     {
         // Window border.
-        UINineSlice* windowBorder = UIUtil::NewUIActorWithWidget<UINineSlice>(mRoot, SidneyUtil::GetGrayBoxParams(SidneyUtil::TransBgColor));
+        UINineSlice* windowBorder = UI::CreateWidgetActor<UINineSlice>("MatchAnalysisWindow", mRoot, SidneyUtil::GetGrayBoxParams(SidneyUtil::TransBgColor));
         windowBorder->GetRectTransform()->SetSizeDelta(267.0f, 156.0f);
         windowBorder->GetRectTransform()->SetAnchoredPosition(0.0f, -15.0f);
         mMatchAnalysisWindow = windowBorder->GetOwner();
         mMatchAnalysisWindow->SetActive(false);
 
         // Add header divider border.
-        UIImage* headerDividerImage = UIUtil::NewUIActorWithWidget<UIImage>(windowBorder->GetOwner());
+        UIImage* headerDividerImage = UI::CreateWidgetActor<UIImage>("Divider", windowBorder);
         headerDividerImage->SetTexture(gAssetManager.LoadTexture("S_BOX_TOP.BMP"), true);
         headerDividerImage->GetRectTransform()->SetAnchor(AnchorPreset::TopStretch);
         headerDividerImage->GetRectTransform()->SetAnchoredPosition(0.0f, -18.0f);
         headerDividerImage->GetRectTransform()->SetSizeDeltaX(0.0f);
 
         // Header label.
-        UILabel* headerLabel = UIUtil::NewUIActorWithWidget<UILabel>(windowBorder->GetOwner());
+        UILabel* headerLabel = UI::CreateWidgetActor<UILabel>("HeaderLabel", windowBorder);
         headerLabel->SetFont(font);
         headerLabel->SetText(SidneyUtil::GetSuspectsLocalizer().GetText("MatchTitle"));
         headerLabel->SetHorizonalAlignment(HorizontalAlignment::Center);
@@ -304,45 +305,45 @@ void SidneySuspects::Init(Actor* parent, SidneyFiles* sidneyFiles)
         headerLabel->GetRectTransform()->SetSizeDelta(0.0f, 18.0f);
 
         // Fingerprint border and images.
-        UINineSlice* fingerprintBorder = UIUtil::NewUIActorWithWidget<UINineSlice>(windowBorder->GetOwner(), SidneyUtil::GetGrayBoxParams(SidneyUtil::TransBgColor));
+        UINineSlice* fingerprintBorder = UI::CreateWidgetActor<UINineSlice>("FingerprintBox", windowBorder, SidneyUtil::GetGrayBoxParams(SidneyUtil::TransBgColor));
         fingerprintBorder->GetRectTransform()->SetAnchor(AnchorPreset::BottomLeft);
         fingerprintBorder->GetRectTransform()->SetAnchoredPosition(18.0f, 65.0f);
         fingerprintBorder->GetRectTransform()->SetSizeDelta(49.0f, 59.0f);
 
-        mMAFingerprintImage = UIUtil::NewUIActorWithWidget<UIImage>(fingerprintBorder->GetOwner());
+        mMAFingerprintImage = UI::CreateWidgetActor<UIImage>("FingerprintImage", fingerprintBorder);
         mMAFingerprintImage->GetRectTransform()->SetAnchor(AnchorPreset::BottomLeft);
         mMAFingerprintImage->GetRectTransform()->SetAnchoredPosition(4.0f, 4.0f);
         mMAFingerprintImage->GetRectTransform()->SetSizeDelta(41.0f, 51.0f);
 
-        mMAFingerprintVideoImage = UIUtil::NewUIActorWithWidget<UIImage>(fingerprintBorder->GetOwner());
+        mMAFingerprintVideoImage = UI::CreateWidgetActor<UIVideoImage>("FingerprintVideoImage", fingerprintBorder);
         mMAFingerprintVideoImage->GetRectTransform()->SetAnchor(AnchorPreset::BottomLeft);
         mMAFingerprintVideoImage->GetRectTransform()->SetAnchoredPosition(4.0f, 4.0f);
         mMAFingerprintVideoImage->GetRectTransform()->SetSizeDelta(41.0f, 51.0f);
 
         // Current action border and label.
-        UINineSlice* actionBorder = UIUtil::NewUIActorWithWidget<UINineSlice>(windowBorder->GetOwner(), SidneyUtil::GetGrayBoxParams(SidneyUtil::TransBgColor));
+        UINineSlice* actionBorder = UI::CreateWidgetActor<UINineSlice>("ActionBox", windowBorder, SidneyUtil::GetGrayBoxParams(SidneyUtil::TransBgColor));
         actionBorder->GetRectTransform()->SetAnchor(AnchorPreset::BottomLeft);
         actionBorder->GetRectTransform()->SetAnchoredPosition(85.0f, 106.0f);
         actionBorder->GetRectTransform()->SetSizeDelta(170.0f, 18.0f);
 
-        mMAActionLabel = UIUtil::NewUIActorWithWidget<UILabel>(actionBorder->GetOwner());
+        mMAActionLabel = UI::CreateWidgetActor<UILabel>("Label", actionBorder);
         mMAActionLabel->SetFont(gAssetManager.LoadFont("SID_TEXT_14_GRN.FON"));
-        mMAActionLabel->SetText("Working...");
+        mMAActionLabel->SetText("");
         mMAActionLabel->SetHorizonalAlignment(HorizontalAlignment::Center);
         mMAActionLabel->GetRectTransform()->SetAnchor(AnchorPreset::TopStretch);
         mMAActionLabel->GetRectTransform()->SetAnchoredPosition(0.0f, -1.0f);
         mMAActionLabel->GetRectTransform()->SetSizeDelta(0.0f, 16.0f);
 
-        mMASuspectLabel = UIUtil::NewUIActorWithWidget<UILabel>(actionBorder->GetOwner());
+        mMASuspectLabel = UI::CreateWidgetActor<UILabel>("SuspectLabel", actionBorder);
         mMASuspectLabel->SetFont(font);
-        mMASuspectLabel->SetText("John Wilkes");
+        mMASuspectLabel->SetText("");
         mMASuspectLabel->SetHorizonalAlignment(HorizontalAlignment::Center);
         mMASuspectLabel->GetRectTransform()->SetAnchor(AnchorPreset::TopStretch);
         mMASuspectLabel->GetRectTransform()->SetAnchoredPosition(0.0f, -26.0f);
         mMASuspectLabel->GetRectTransform()->SetSizeDelta(0.0f, 18.0f);
 
         // Create buttons.
-        mMALinkToSuspectButton = new SidneyButton(windowBorder->GetOwner());
+        mMALinkToSuspectButton = new SidneyButton("LinkButton", windowBorder->GetOwner());
         mMALinkToSuspectButton->SetText(SidneyUtil::GetSuspectsLocalizer().GetText("MatchLink"));
         mMALinkToSuspectButton->GetRectTransform()->SetAnchor(AnchorPreset::BottomLeft);
         mMALinkToSuspectButton->GetRectTransform()->SetAnchoredPosition(12.0f, 10.0f);
@@ -351,7 +352,7 @@ void SidneySuspects::Init(Actor* parent, SidneyFiles* sidneyFiles)
             OnLinkToSuspectPressed();
         });
 
-        mMACloseButton = new SidneyButton(windowBorder->GetOwner());
+        mMACloseButton = new SidneyButton("CloseButton", windowBorder->GetOwner());
         mMACloseButton->SetText(SidneyUtil::GetSuspectsLocalizer().GetText("MatchClose"));
         mMACloseButton->GetRectTransform()->SetAnchor(AnchorPreset::BottomLeft);
         mMACloseButton->GetRectTransform()->SetAnchoredPosition(144.0f, 10.0f);
@@ -449,6 +450,12 @@ void SidneySuspects::Hide()
     mRoot->SetActive(false);
 }
 
+void SidneySuspects::OpenFile(int fileId)
+{
+    mOpenedFileId = fileId;
+    ShowFile(mFiles->GetFile(mOpenedFileId));
+}
+
 void SidneySuspects::OnUpdate(float deltaTime)
 {
     if(!mRoot->IsActive()) { return; }
@@ -514,7 +521,7 @@ void SidneySuspects::ShowSuspect(int index)
     if(fingerprintFileIt != info.linkedFileIds.end())
     {
         mFingerprintImage->SetEnabled(true);
-        mFingerprintImage->SetTexture(mFiles->GetFile(*fingerprintFileIt)->GetIcon());
+        mFingerprintImage->SetTexture(info.matchAnalysisFingerprintTexture);
     }
     else
     {
@@ -550,7 +557,7 @@ void SidneySuspects::ShowSuspect(int index)
     {
         mLinkedEvidenceItems[evidenceItemIndex].root->SetActive(false);
     }
-    
+
     // Save the opened suspect index.
     mOpenedSuspectIndex = index;
 
@@ -658,7 +665,7 @@ void SidneySuspects::OnLinkToSuspectPressed()
                 }
             }
             if(alreadyLinked) { break; }
-        }   
+        }
     }
     else
     {
@@ -675,7 +682,7 @@ void SidneySuspects::OnLinkToSuspectPressed()
         mPopup->ShowOneButton();
         return;
     }
-    
+
     // Link the file.
     info.linkedFileIds.push_back(mOpenedFileId);
 
@@ -750,7 +757,7 @@ void SidneySuspects::OnUnlinkToSuspectPressed()
     }
     else
     {
-        info.selectedLinkedFileIndex = Math::Clamp(info.selectedLinkedFileIndex, 0, info.linkedFileIds.size() - 1);
+        info.selectedLinkedFileIndex = Math::Clamp<int>(info.selectedLinkedFileIndex, 0, info.linkedFileIds.size() - 1);
     }
 
     // Re-show this suspect to refresh the UI.
@@ -759,6 +766,14 @@ void SidneySuspects::OnUnlinkToSuspectPressed()
 
 void SidneySuspects::OnMatchAnalysisPressed()
 {
+    // Gabe doesn't do match analysis - he'll say "Grace does this stuff."
+    if(StringUtil::EqualsIgnoreCase(Scene::GetEgoName(), "Gabriel"))
+    {
+        gActionManager.ExecuteSheepAction("wait StartDialogue(\"02O7A2ZQR1\", 1)");
+        return;
+    }
+
+    // Based on the file being analyzed, decide on textures/videos and who will be a match.
     Texture* fingerprintTexture = nullptr;
     Texture* compareTexture = nullptr;
     std::string videoName;
@@ -801,12 +816,15 @@ void SidneySuspects::OnMatchAnalysisPressed()
     mMACloseButton->GetButton()->SetCanInteract(false);
     mMatchAnalysisWindow->SetActive(true);
 
+    // The game is in hands-off mode until the match analysis completes.
+    gActionManager.StartManualAction();
+
     // Ok, we're going to put on a big show of analyzing the fingerprint and comparing it to all the suspects!
     gAudioManager.PlaySFX(gAssetManager.LoadAudio("WORKING3.WAV", AssetScope::Scene), [this, videoName, compareTexture, matchSuspectIndex](){
 
         // Play video file of the match analysis occurring.
         mMAFingerprintVideoImage->SetEnabled(true);
-        gVideoPlayer.Play(videoName, nullptr, mMAFingerprintVideoImage, [this, compareTexture, matchSuspectIndex](){
+        mMAFingerprintVideoImage->Play(videoName, [this, compareTexture, matchSuspectIndex](){
 
             // Once video completes, the video image shows the compare texture overlay.
             mMAFingerprintVideoImage->SetTexture(compareTexture);
@@ -814,7 +832,6 @@ void SidneySuspects::OnMatchAnalysisPressed()
             // Now we move on to compare mode...
             mMAActionLabel->SetText(SidneyUtil::GetSuspectsLocalizer().GetText("MatchCompare"));
             OnMatchAnalysisCheckSuspect(0, matchSuspectIndex);
-            mMACloseButton->GetButton()->SetCanInteract(true);
         });
     });
 }
@@ -827,6 +844,9 @@ void SidneySuspects::OnMatchAnalysisCheckSuspect(int currentIndex, int matchInde
         mMAActionLabel->SetText(SidneyUtil::GetSuspectsLocalizer().GetText("MatchNone"));
         mMASuspectLabel->SetText("");
         mMACloseButton->GetButton()->SetCanInteract(true);
+
+        // Completes the match analysis action.
+        gActionManager.FinishManualAction();
 
         // If this is the unknown LSR fingerprint, Grace plays some dialogue about having to try again later.
         if(mOpenedFileId == SidneyFileIds::kUnknownLSRFingerprint)
@@ -868,6 +888,9 @@ void SidneySuspects::OnMatchAnalysisCheckSuspect(int currentIndex, int matchInde
 
             // Open the suspect's page.
             ShowSuspect(currentIndex);
+
+            // Completes the match analysis action.
+            gActionManager.FinishManualAction();
 
             // Do some action that depends on the file matched.
             if(mOpenedFileId == SidneyFileIds::kManuscriptPrint1)

@@ -12,6 +12,7 @@ class GAS;
 class GasPlayer;
 class MeshRenderer;
 class Model;
+class PersistState;
 class SceneData;
 struct SceneModel;
 class VertexAnimator;
@@ -26,7 +27,7 @@ public:
     GKProp(const SceneModel& modelDef);
 
     void Init(const SceneData& sceneData);
-    
+
     void StartFidget(GAS* gas);
     void StartFidget();
     void StopFidget(std::function<void()> callback = nullptr);
@@ -35,8 +36,8 @@ public:
     void SampleAnimation(VertexAnimParams& animParams, int frame) override;
     void StopAnimation(VertexAnimation* anim = nullptr) override;
     MeshRenderer* GetMeshRenderer() const override { return mMeshRenderer; }
-    AABB GetAABB() override;
-	
+    AABB GetAABB() const override;
+
 private:
     // The prop's mesh renderer.
     MeshRenderer* mMeshRenderer = nullptr;

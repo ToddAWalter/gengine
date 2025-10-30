@@ -9,6 +9,7 @@
 #include "LocationManager.h"
 #include "ReportManager.h"
 #include "SceneManager.h"
+#include "Sidney.h"
 #include "StatusOverlay.h"
 #include "StringUtil.h"
 #include "TextAsset.h"
@@ -45,12 +46,12 @@ void GameProgress::Init()
 
 void GameProgress::SetScore(int score)
 {
-	mScore = Math::Clamp(score, 0, mMaxScore);
+    mScore = Math::Clamp(score, 0, mMaxScore);
 }
 
 void GameProgress::IncreaseScore(int points)
 {
-	SetScore(mScore + points);
+    SetScore(mScore + points);
 }
 
 void GameProgress::ChangeScore(const std::string& scoreName)
@@ -88,11 +89,11 @@ void GameProgress::ChangeScore(const std::string& scoreName)
 
 void GameProgress::SetTimeblock(const Timeblock& timeblock)
 {
-	mLastTimeblock = mTimeblock;
-	mTimeblock = timeblock;
-	
-	// Chat counts are reset on time block change.
-	mChatCounts.clear();
+    mLastTimeblock = mTimeblock;
+    mTimeblock = timeblock;
+
+    // Chat counts are reset on time block change.
+    mChatCounts.clear();
 }
 
 std::string GameProgress::GetTimeblockDisplayName() const
@@ -103,7 +104,7 @@ std::string GameProgress::GetTimeblockDisplayName() const
 std::string GameProgress::GetTimeblockDisplayName(const std::string& timeblockStr) const
 {
     // Keys for timeblocks are in form "Day110A".
-    return gLocalizer.GetText("Day" + mTimeblock.ToString());
+    return gLocalizer.GetText("Day" + timeblockStr);
 }
 
 void GameProgress::EndCurrentTimeblock(const std::function<void()>& callback)
@@ -126,16 +127,25 @@ void GameProgress::EndCurrentTimeblock(const std::function<void()>& callback)
     });
 }
 
-void GameProgress::StartTimeblock(const Timeblock& timeblock, const std::function<void()>& callback)
+void GameProgress::StartTimeblock(const Timeblock& timeblock, bool loadingSave, const std::function<void()>& callback)
 {
     // Change time to new timeblock.
     SetTimeblock(timeblock);
 
+    // Make sure video player is hidden.
+    gGK3UI.GetVideoPlayer()->Hide();
+
     // Show timeblock screen.
-    gGK3UI.ShowTimeblockScreen(timeblock, 0.0f, [this, timeblock, callback](){
+    gGK3UI.ShowTimeblockScreen(timeblock, 0.0f, loadingSave, [this, timeblock, callback](){
 
         // Show beginning movie (if any) for the new timeblock.
         VideoHelper::PlayVideoWithCaptions(timeblock.ToString() + "begin", [this, callback](){
+
+            // HACK: If Sidney is still up, make sure it is hidden at this point.
+            // Just set active to false (don't call "Hide") because we don't want scene change behavior.
+            // This is mainly done here to improve presentation when a timeblock ends while Sidney is up.
+            // If we hide Sidney earlier, you often get an ugly single frame of the 3D scene before a video or UI displays.
+            gGK3UI.GetSidney()->SetActive(false);
 
             // Reload our current location in the new timeblock.
             gSceneManager.LoadScene(gLocationManager.GetLocation());
@@ -154,42 +164,42 @@ void GameProgress::StartTimeblock(const Timeblock& timeblock, const std::functio
 
 int GameProgress::GetGameVariable(const std::string& varName) const
 {
-	auto it = mGameVariables.find(varName);
-	if(it != mGameVariables.end())
-	{
-		return it->second;
-	}
-	return 0;
+    auto it = mGameVariables.find(varName);
+    if(it != mGameVariables.end())
+    {
+        return it->second;
+    }
+    return 0;
 }
 
 void GameProgress::SetGameVariable(const std::string& varName, int value)
 {
-	mGameVariables[varName] = value;
+    mGameVariables[varName] = value;
 }
 
 void GameProgress::IncGameVariable(const std::string& varName)
 {
-	++mGameVariables[varName];
+    ++mGameVariables[varName];
 }
 
 int GameProgress::GetChatCount(const std::string& noun) const
 {
-	auto it = mChatCounts.find(noun);
-	if(it != mChatCounts.end())
-	{
-		return it->second;
-	}
-	return 0;
+    auto it = mChatCounts.find(noun);
+    if(it != mChatCounts.end())
+    {
+        return it->second;
+    }
+    return 0;
 }
 
 void GameProgress::SetChatCount(const std::string& noun, int count)
 {
-	mChatCounts[noun] = count;
+    mChatCounts[noun] = count;
 }
 
 void GameProgress::IncChatCount(const std::string& noun)
 {
-	++mChatCounts[noun];
+    ++mChatCounts[noun];
 }
 
 int GameProgress::GetTopicCount(const std::string& noun, const std::string& topic) const

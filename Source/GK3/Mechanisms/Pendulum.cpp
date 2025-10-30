@@ -3,7 +3,6 @@
 #include "ActionManager.h"
 #include "Animator.h"
 #include "AssetManager.h"
-#include "Camera.h"
 #include "CursorManager.h"
 #include "Debug.h"
 #include "GameCamera.h"
@@ -12,9 +11,9 @@
 #include "InputManager.h"
 #include "Interpolate.h"
 #include "MeshRenderer.h"
-#include "Ray.h"
+#include "PersistState.h"
 #include "SceneManager.h"
-#include "UICanvas.h"
+#include "Timers.h"
 
 Pendulum::Pendulum() : Actor("Pendulum Puzzle")
 {
@@ -78,7 +77,7 @@ Pendulum::Pendulum() : Actor("Pendulum Puzzle")
     // The amount of time it takes for the pendulum to complete one cycle is derived in a truly deranged way.
     // We know how many platforms should pass the pendulum between cycles.
     // We know the rotation speeds of the platforms. So...let's figure this out.
-    // 
+    //
     // The platforms rotate in a circle over the course of 50 seconds. So, the radians of movement per second are 2pi/50.
     mPlatformRotationSpeed = Math::k2Pi / platformRevolutionDuration;
 
@@ -87,7 +86,7 @@ Pendulum::Pendulum() : Actor("Pendulum Puzzle")
     float platformDuration = kRadiansPerPlatform / mPlatformRotationSpeed;
     mPendulumCycleDuration = platformDuration * platformsPerPendulumCycle;
 
-    // Set pendulum initially to its max angle.
+    // Set pendulum initial rotation based on derived values.
     SetPendulumActorRotation(mPendulumMaxAngle);
 
     // Because this Pendulum sequence is so complex, all animations are controlled in this class, as opposed to via the fidget or walk systems.
@@ -97,6 +96,34 @@ Pendulum::Pendulum() : Actor("Pendulum Puzzle")
     // The floor is kind of weird in this level (only the center altar area).
     // To avoid some weirdness with the camera height-adjusting, ignore height for camera in this scene.
     gSceneManager.GetScene()->GetCamera()->SetIgnoreFloor(true);
+}
+
+void Pendulum::OnPersist(PersistState& ps)
+{
+    ps.Xfer(PERSIST_VAR(mPendulumCycleTimer));
+    ps.Xfer(PERSIST_VAR(mPlatformRotation));
+    ps.Xfer(PERSIST_VAR(mGabePlatformIndex));
+    ps.Xfer<GabeState, int>(PERSIST_VAR(mGabeState));
+
+    // When loading, we need to do a pendulum update to ensure a) proper rotation, and b) using right pendulum actor based on Gabe state.
+    if(ps.IsLoading())
+    {
+        UpdatePendulum(0.0f);
+
+        // Due to the dynamic nature of this scene, Gabe's jumps aren't actions/cutscenes, so you CAN save during them.
+        // However, we aren't saving jump state! If we detect a save during a jump, just put Gabe back on the last platform he was on.
+        if(mGabeState == GabeState::Jumping)
+        {
+            mGabeState = GabeState::OnPlatform;
+        }
+
+        // The constructor starts Gabe's idle animation. But if Gabe's in a situation where that's not needed after loading, it can conflict.
+        // For example, if Gabe's on the altar, he has a specific idle GAS he's using, so we want to cancel the one we set.
+        if(mGabeState != GabeState::InEntryway && mGabeState != GabeState::OnPlatform)
+        {
+            gSceneManager.GetScene()->GetAnimator()->Stop(mIdleAnim, true);
+        }
+    }
 }
 
 void Pendulum::OnUpdate(float deltaTime)
@@ -286,7 +313,7 @@ Vector3 Pendulum::GetPlatformPosition(int platformIndex)
 {
     // You'd think this would be simple...just platform->GetPosition right?
     // WRONG! All the platforms have the same position, in the center of the scene.
-    
+
     // Calculate the current rotation of the platform index we're interested in.
     // The "half platform radians" is needed because we want the rotation of the platform center, not the platform left edge.
     float platformRotation = (kRadiansPerPlatform * 0.5f) + (kRadiansPerPlatform * platformIndex) + mPlatformRotation;
@@ -411,7 +438,7 @@ void Pendulum::UpdateGabeInteract()
         if(hoveredPlatformIndex >= 0)
         {
             // Show interact cursor. This one always uses the RED version.
-            gCursorManager.UseRedHighlightCursor();
+            gCursorManager.UseRedHighlightCursor(1);
 
             // On click release, we commit to interacting with this platform.
             if(gInputManager.IsMouseButtonTrailingEdge(InputManager::MouseButton::Left))
@@ -453,7 +480,7 @@ void Pendulum::UpdateGabeInteract()
             {
                 // If you can grab it, use the grab cursor.
                 // Also disable normal scene interaction, so that clicking doesn't show the verb bar for the pendulum in this case.
-                gCursorManager.UseCustomCursor(mGrabCursor);
+                gCursorManager.UseCustomCursor(mGrabCursor, 10);
                 gSceneManager.GetScene()->GetCamera()->SetSceneInteractEnabled(false);
 
                 // If clicked, you grab the pendulum!
@@ -521,11 +548,11 @@ void Pendulum::UpdateGabeInteract()
         // Update cursor.
         if(useGrabCursor)
         {
-            gCursorManager.UseCustomCursor(mGrabCursor);
+            gCursorManager.UseCustomCursor(mGrabCursor, 10);
         }
         else if(useHighlightCursor)
         {
-            gCursorManager.UseRedHighlightCursor();
+            gCursorManager.UseRedHighlightCursor(1);
         }
         else
         {
@@ -566,6 +593,10 @@ void Pendulum::OnForwardJumpStarted()
 {
     mGabeState = GabeState::Jumping;
 
+    // The original game doesn't consider this an action - you can save during the forward jump animation.
+    // However, this is much harder to support for the way we're doing save games. So we'll disallow saving during this jump.
+    gActionManager.StartManualAction();
+
     // Stop idle anim.
     gSceneManager.GetScene()->GetAnimator()->Stop(mIdleAnim);
 
@@ -591,6 +622,9 @@ void Pendulum::OnForwardJumpStarted()
 
             // We are now on the platform.
             mGabeState = GabeState::OnPlatform;
+
+            // No longer in an action.
+            gActionManager.FinishManualAction();
 
             // Play idle anim again.
             gSceneManager.GetScene()->GetAnimator()->Start(mIdleAnimParams);
@@ -711,7 +745,7 @@ void Pendulum::OnPendulumPlatformDeath(bool onLeftSide, bool pendulumMovingLeft)
 
         // Cut to high camera and wait a beat, so you can feel bad.
         gSceneManager.GetScene()->SetCameraPosition(onLeftSide ? "AFTERKILL_HIGH" : "AFTERKILL_LOW");
-        Timers::AddTimerSeconds(2.0f, [this](){
+        gActionManager.ExecuteSheepAction("wait SetTimerSeconds(2)", [this](const Action* action){
 
             // Reset ego at entryway, so the player can try again if they choose "retry" on the death screen.
             ResetAtEntryway();
@@ -722,6 +756,9 @@ void Pendulum::OnPendulumPlatformDeath(bool onLeftSide, bool pendulumMovingLeft)
 void Pendulum::OnGrabPendulum()
 {
     mGabeState = GabeState::OnPendulum;
+
+    // Pretend this is an action so we don't have to support saving during this tiny cutscene.
+    gActionManager.StartManualAction();
 
     // Do a camera cut to hide the model swap shenanigans we're attempting here.
     gSceneManager.GetScene()->SetCameraPosition(mPendulumState == PendulumState::InDangerZoneLeft ? "KILL_HIGH" : "KILL_LOW");
@@ -752,6 +789,9 @@ void Pendulum::OnGrabPendulum()
         // After the anim, change to a set camera position of the altar.
         // From here, the player must try to drop off the pendulum and land on the altar.
         gSceneManager.GetScene()->SetCameraPosition("LONG_ALTAR");
+
+        // Done with little cutscene.
+        gActionManager.FinishManualAction();
     });
 
     // You get some points for this action!
@@ -764,9 +804,12 @@ void Pendulum::OnFallToDeath()
     // Enter the dying state.
     mGabeState = GabeState::Dying;
 
+    // The original game doesn't consider this an "action" - but it's better if we don't let people save during this part.
+    gActionManager.StartManualAction();
+
     // Toggle back to non-Gabe version of pendulum.
     UseNormalPendulum();
-    
+
     // Position Gabe right under the pendulum.
     // This is janky, but the camera cut masks the position change.
     // The camera cut also purposely makes it difficult to gauge depth, but I think the cutscene ultimately looks better if you move Gabe closer to the ground.
@@ -783,6 +826,9 @@ void Pendulum::OnFallToDeath()
 
         // Wait a beat so you can see your mistake.
         Timers::AddTimerSeconds(2.0f, [this](){
+
+            // Done with manual action.
+            gActionManager.FinishManualAction();
 
             // Reset ego at entryway, so the player can try again if they choose "retry" on the death screen.
             ResetAtEntryway();

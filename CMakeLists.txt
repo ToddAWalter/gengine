@@ -5,7 +5,7 @@ cmake_minimum_required(VERSION 3.17)
 set(CMAKE_OSX_ARCHITECTURES "x86_64" CACHE STRING "")
 
 # Define G-Engine project.
-project(gengine VERSION 0.3.0
+project(gengine VERSION 0.4.0
                 DESCRIPTION "Gabriel Knight 3 game engine"
                 LANGUAGES C CXX)
 
@@ -22,21 +22,13 @@ file(TO_NATIVE_PATH ${CMAKE_CURRENT_BINARY_DIR} PLAT_BINARY_DIR)
 # For Xcode, generate schemes for targets. This ensures targets appear in target dropdown.
 set(CMAKE_XCODE_GENERATE_SCHEME TRUE)
 
-# CLion and Xcode differ in where they put the Mac App, and also how they name it. Let's support both!
-if(APPLE)
-    set(MAC_APP_CONTENTS "${PLAT_BINARY_DIR}/gk3.app/Contents")
-    if(XCODE)
-        set(MAC_APP_CONTENTS "${PLAT_BINARY_DIR}/$<CONFIG>/Gabriel Knight 3.app/Contents")
-    endif()
-endif()
-
 # Generate header containing info about build environment.
 # Important to put generated file in BINARY_DIR - otherwise, conflicts may occur when multiple projects are generated.
 include(CheckIncludeFile)
 CHECK_INCLUDE_FILE(sys/stat.h HAVE_STAT_H)
 CHECK_INCLUDE_FILE(dirent.h HAVE_DIRENT_H)
 CHECK_INCLUDE_FILE(unistd.h HAVE_UNISTD_H)
-configure_file("${PROJECT_SOURCE_DIR}/Source/Platform/BuildEnv.h.in" "${CMAKE_CURRENT_BINARY_DIR}/BuildEnv.h")
+configure_file("${PROJECT_SOURCE_DIR}/Source/Engine/Platform/BuildEnv.h.in" "${CMAKE_CURRENT_BINARY_DIR}/BuildEnv.h")
 
 # Get all cpp/h files in the Source directory using GLOB.
 # Supposedly using GLOB is frowned upon, but...it works really well for now sooooo.
@@ -47,7 +39,7 @@ source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}" FILES ${source_files})
 
 # Do the same for Assets folder, so they also appear in IDE.
 file(GLOB_RECURSE asset_files CONFIGURE_DEPENDS
-    "Assets/*.txt" "Assets/*.shp" "Assets/*.frag" "Assets/*.vert"
+    "Assets/*.txt" "Assets/*.shp" "Assets/*.glsl"
 )
 source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}" FILES ${asset_files})
 
@@ -57,47 +49,23 @@ add_executable(gk3 ${source_files} ${asset_files})
 ###################
 # COMPILER CONFIG
 ###################
-# Add header locations. For any folder listed here, you can add headers in that folder without providing a path.
+# Automatically detect all Source directories to auto-populate the list of include directories.
+file(GLOB_RECURSE ALL_SOURCE_FILES_AND_DIRS CONFIGURE_DEPENDS
+    LIST_DIRECTORIES true
+    "${CMAKE_CURRENT_SOURCE_DIR}/Source/*"
+)
+set(ALL_SOURCE_DIRS "")
+foreach(ITEM IN LISTS ALL_SOURCE_FILES_AND_DIRS)
+    if(IS_DIRECTORY "${ITEM}")
+        list(APPEND ALL_SOURCE_DIRS "${ITEM}")
+    endif()
+endforeach()
+
+# Add include directories. This allows including files in these folders w/o specifying a full path.
+# But one danger is ambiguities, if two folders have a file with the same name.
 target_include_directories(gk3 PRIVATE
-    # Source include dirs
     Source
-    Source/Assets
-    Source/Audio
-    Source/Containers
-    Source/Debug
-    Source/GK3
-    Source/GK3/Actions
-    Source/GK3/Actors
-    Source/GK3/Animation
-    Source/GK3/Mechanisms
-    Source/GK3/Scene
-    Source/GK3/UI
-    Source/GK3/UI/Sidney
-    Source/GK3/UI/Sidney/Components
-    Source/Input
-    Source/IO
-    Source/Math
-    Source/Memory
-    Source/ObjectModel
-    Source/Persistence
-    Source/Platform
-    Source/Primitives
-    Source/Rendering
-    Source/Rendering/Graphics
-    Source/Reports
-    Source/RTTI
-    Source/Sheep
-    Source/Sheep/API
-    Source/Sheep/Compiler
-    Source/Sheep/Machine
-    Source/Tools
-    Source/UI
-    Source/Util
-    Source/Util/Threads
-    Source/Video
-    Source/Video/Decode
-    Source/Video/Playback
-    Source/Video/Util
+    ${ALL_SOURCE_DIRS}
 
     # Library include dirs
     Libraries/ffmpeg/include
@@ -183,7 +151,7 @@ elseif(APPLE)
 endif()
 
 #########################
-# LIBRARY/LINKING CONFIG
+# LINKER CONFIG
 #########################
 # Library locations/linking/copying.
 set(LIBS_SRC "${PLAT_SOURCE_DIR}/Libraries")
@@ -211,7 +179,7 @@ if(WIN32)
         glew32                                      # GLEW
         libpng16                                    # libpng
         zdll                                        # zlib
-        SDL2                                        # SDL
+        SDL2 SDL2main                               # SDL
         opengl32                                    # OpenGL
     )
 
@@ -270,6 +238,12 @@ elseif(APPLE)
         ${OPENGL_LIB}                               # OpenGL
     )
 
+    # CLion and Xcode differ in where they put the Mac App, and also how they name it. Let's support both!
+    set(MAC_APP_CONTENTS "${PLAT_BINARY_DIR}/gk3.app/Contents")
+    if(XCODE)
+        set(MAC_APP_CONTENTS "${PLAT_BINARY_DIR}/$<CONFIG>/gk3.app/Contents")
+    endif()
+
     # Copy libraries after build.
     set(LIB_DEST "${MAC_APP_CONTENTS}/Libraries")
     set(LIB_FFMPEG_SRC "${LIBS_SRC}/ffmpeg/lib/mac")
@@ -286,7 +260,6 @@ elseif(APPLE)
         COMMAND ${CMAKE_COMMAND} -E copy "${LIBS_SRC}/libpng/mac/lib/libpng.dylib" "${LIB_DEST}"
         COMMAND ${CMAKE_COMMAND} -E copy "${LIBS_SRC}/zlib/mac/lib/libz.dylib" "${LIB_DEST}"
     )
-
 else() # Linux
     target_include_directories(gk3 PRIVATE
         Libraries/libpng/linux/include
@@ -322,8 +295,6 @@ else() # Linux
     set(LIB_FFMPEG_SRC "${LIBS_SRC}/ffmpeg/lib/linux")
     add_custom_command(TARGET gk3
         POST_BUILD
-        COMMAND ln -fs "${PLAT_SOURCE_DIR}/Assets" "${PLAT_BINARY_DIR}"  #TODO: Can maybe use ${CMAKE_COMMAND} -E create_symlink?
-        COMMAND ln -fs "${PLAT_SOURCE_DIR}/Data" "${PLAT_BINARY_DIR}"
         COMMAND ${CMAKE_COMMAND} -E copy "${LIB_FFMPEG_SRC}/libavcodec.so" "${LIB_DEST}"
         COMMAND ${CMAKE_COMMAND} -E copy "${LIB_FFMPEG_SRC}/libavformat.so" "${LIB_DEST}"
         COMMAND ${CMAKE_COMMAND} -E copy "${LIB_FFMPEG_SRC}/libavutil.so" "${LIB_DEST}"
@@ -375,6 +346,11 @@ source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}" FILES ${IMGUI_SOURCES})
 ##################
 # Here, we mostly have misc configs required to get the engine working on a specific platform, or to help with debugging.
 if(WIN32)
+    #TODO: This should probably be TRUE for release targets, but may want to ensure a log file is being written before doing this.
+    #set_target_properties(gk3 PROPERTIES
+    #    WIN32_EXECUTABLE TRUE
+    #)
+
     # Use repo root as debugger working directory.
     # This allows running the game without copying Assets/Data to the Build folder.
     set_property(TARGET gk3 PROPERTY
@@ -399,7 +375,6 @@ elseif(APPLE)
         MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION}
 
         XCODE_ATTRIBUTE_ASSETCATALOG_COMPILER_APPICON_NAME AppIcon
-        XCODE_ATTRIBUTE_PRODUCT_NAME "Gabriel Knight 3"
         XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "com.kromenak.gengine"
         XCODE_ATTRIBUTE_MARKETING_VERSION ${PROJECT_VERSION}
         XCODE_ATTRIBUTE_CURRENT_PROJECT_VERSION 1
@@ -431,62 +406,120 @@ elseif(APPLE)
             POST_BUILD
             COMMAND mkdir -p "${MAC_APP_FRAMEWORKS}"
             COMMAND cp -R "${PLAT_SOURCE_DIR}/Libraries/SDL/SDL2.framework" "${MAC_APP_FRAMEWORKS}"
-            COMMAND ln -fs "${PLAT_SOURCE_DIR}/Assets" "${MAC_APP_CONTENTS}/Resources"
-            COMMAND ln -fs "${PLAT_SOURCE_DIR}/Data" "${MAC_APP_CONTENTS}/Resources"
+            COMMAND ${CMAKE_COMMAND} -E create_symlink "${PLAT_SOURCE_DIR}/Assets" "${MAC_APP_CONTENTS}/Resources/Assets"
+            COMMAND ${CMAKE_COMMAND} -E create_symlink "${PLAT_SOURCE_DIR}/Data" "${MAC_APP_CONTENTS}/Resources/Data"
         )
     endif()
 else() # Linux
     # Add symbolic links to Assets/Data so the game runs even if working directory isn't the source root.
     add_custom_command(TARGET gk3
         POST_BUILD
-        COMMAND ln -fs "${PLAT_SOURCE_DIR}/Assets" "${PLAT_BINARY_DIR}"  #TODO: Can maybe use ${CMAKE_COMMAND} -E create_symlink?
-        COMMAND ln -fs "${PLAT_SOURCE_DIR}/Data" "${PLAT_BINARY_DIR}"
+        COMMAND ${CMAKE_COMMAND} -E create_symlink "${PLAT_SOURCE_DIR}/Assets" "${PLAT_BINARY_DIR}/Assets"
+        COMMAND ${CMAKE_COMMAND} -E create_symlink "${PLAT_SOURCE_DIR}/Data" "${PLAT_BINARY_DIR}/Data"
+        COMMAND ${CMAKE_COMMAND} -E create_symlink "${PLAT_SOURCE_DIR}/GK3.ini" "${PLAT_BINARY_DIR}/GK3.ini"
     )
 endif()
 
+#########################
+# DEPLOY/PUBLISH CONFIG
+#########################
 # Create deploy target, which creates a final release of the game.
 # This packages the built game into a zip file in the "Bin" directory, with any copyrighted material excluded.
 add_custom_target(deploy DEPENDS "deploy_output")
-if(WIN32)
-    set(ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
-    set(BUILD_DIR "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>")
-    set(DEPLOY_DIR "${CMAKE_CURRENT_SOURCE_DIR}/Bin/$<CONFIG>")
-    set(ZIP_FILE_NAME "GK3-Win-${PROJECT_VERSION}.zip")
+add_dependencies(deploy gk3)
 
+# Set important paths used to generate final deploy build.
+set(ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
+set(DEPLOY_DIR "${CMAKE_CURRENT_SOURCE_DIR}/Bin/$<CONFIG>")
+if(CMAKE_CONFIGURATION_TYPES)
+    set(BUILD_DIR "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>")
+else()
+    set(BUILD_DIR "${CMAKE_CURRENT_BINARY_DIR}")
+endif()
+
+# Get rid of any stale/leftover deploy directory.
+add_custom_command(
+    OUTPUT "deploy_output_clean"
+    COMMAND ${CMAKE_COMMAND} -E rm -rf "${DEPLOY_DIR}"
+    VERBATIM
+)
+
+# Per-platform logic to copy exe to deploy directory.
+if(WIN32)
+    set(ZIP_FILE_NAME "GK3-Win-${PROJECT_VERSION}.zip")
+    set(ASSETS_ROOT_DIR "${DEPLOY_DIR}")
+
+    # Copy over exe and libraries.
     add_custom_command(
-        OUTPUT "deploy_output_first"
-        COMMAND ${CMAKE_COMMAND} -E rm -rf "${DEPLOY_DIR}"
+        OUTPUT "deploy_output_exe"
+        DEPENDS "deploy_output_clean"
         COMMAND ${CMAKE_COMMAND} -E copy_directory "${BUILD_DIR}" "${DEPLOY_DIR}"
         COMMAND ${CMAKE_COMMAND} -E rm -rf "${DEPLOY_DIR}/gk3.pdb"
         COMMAND ${CMAKE_COMMAND} -E rename "${DEPLOY_DIR}/gk3.exe" "${DEPLOY_DIR}/GK3.exe"
-        COMMAND ${CMAKE_COMMAND} -E copy_directory "${ROOT_DIR}/Assets" "${DEPLOY_DIR}/Assets"
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${DEPLOY_DIR}/Data"
-        COMMAND ${CMAKE_COMMAND} -E copy "${ROOT_DIR}/Data/README.md" "${DEPLOY_DIR}/Data"
-        COMMAND ${CMAKE_COMMAND} -E copy "${ROOT_DIR}/GK3.ini" "${DEPLOY_DIR}"
-        VERBATIM
-    )
-    add_custom_command(
-        OUTPUT "deploy_output"
-        DEPENDS "deploy_output_first"
-        COMMAND ${CMAKE_COMMAND} -E tar cvf "${ROOT_DIR}/${ZIP_FILE_NAME}" --format=zip .
-        COMMAND ${CMAKE_COMMAND} -E rename "${ROOT_DIR}/${ZIP_FILE_NAME}" "${DEPLOY_DIR}/${ZIP_FILE_NAME}"
-        WORKING_DIRECTORY "${DEPLOY_DIR}"
         VERBATIM
     )
 elseif(APPLE)
+    set(ZIP_FILE_NAME "GK3-Mac-${PROJECT_VERSION}.zip")
+    set(APP_FILENAME "Gabriel Knight 3.app")
+    set(ASSETS_ROOT_DIR "${DEPLOY_DIR}/${APP_FILENAME}/Contents/Resources")
+
+    # Copy over app bundle.
     add_custom_command(
-        OUTPUT "deploy_output"
-        COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/Publish/Deploy.sh ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG> ${CMAKE_CURRENT_SOURCE_DIR}/Bin/$<CONFIG> ${PROJECT_VERSION} Mac
+        OUTPUT "deploy_output_exe"
+        DEPENDS "deploy_output_clean"
+        COMMAND ${CMAKE_COMMAND} -E copy_directory "${BUILD_DIR}/gk3.app" "${DEPLOY_DIR}/${APP_FILENAME}"
         VERBATIM
     )
 else() # Linux
+    set(ZIP_FILE_NAME "GK3-Linux-${PROJECT_VERSION}.zip")
+    set(APP_FILENAME "Gabriel Knight 3")
+    set(ASSETS_ROOT_DIR "${DEPLOY_DIR}")
+
+    # Copy over application and libraries.
+    # Also replace rpath with "$ORIGIN" to search for libraries at path of executable at runtime.
     add_custom_command(
-        OUTPUT "deploy_output"
-        COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/Publish/Deploy.sh ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/Bin/$<CONFIG> ${PROJECT_VERSION} Linux
+        OUTPUT "deploy_output_exe"
+        DEPENDS "deploy_output_clean"
+        COMMAND ${CMAKE_COMMAND} -E copy "${BUILD_DIR}/gk3" "${DEPLOY_DIR}/${APP_FILENAME}"
+        COMMAND patchelf --set-rpath "$ORIGIN" "${DEPLOY_DIR}/${APP_FILENAME}"
+        COMMAND sh -c "cp ${BUILD_DIR}/*.so \"${DEPLOY_DIR}\""
         VERBATIM
     )
 endif()
-add_dependencies(deploy gk3)
 
+# Deploy operations shared by all platforms.
+add_custom_command(
+    OUTPUT "deploy_output_shared"
+    DEPENDS "deploy_output_exe"
+
+    # Copy Assets directory to final deploy spot.
+    COMMAND ${CMAKE_COMMAND} -E copy_directory "${ROOT_DIR}/Assets" "${ASSETS_ROOT_DIR}/Assets"
+
+    # Make Data directory in app bundle with README file.
+    COMMAND ${CMAKE_COMMAND} -E rm -rf "${ASSETS_ROOT_DIR}/Data"
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${ASSETS_ROOT_DIR}/Data"
+    COMMAND ${CMAKE_COMMAND} -E copy "${ROOT_DIR}/Data/README.md" "${ASSETS_ROOT_DIR}/Data"
+
+    # Copy over .ini file.
+    COMMAND ${CMAKE_COMMAND} -E copy "${ROOT_DIR}/GK3.ini" "${ASSETS_ROOT_DIR}"
+
+    # Copy over README.
+    COMMAND ${CMAKE_COMMAND} -E copy "${ROOT_DIR}/Publish/README.md" "${DEPLOY_DIR}"
+    VERBATIM
+)
+
+# Zips the contents of the "Bin/$<CONFIG>" directory for distribution on GitHub or elsewhere.
+add_custom_command(
+    OUTPUT "deploy_output"
+    DEPENDS "deploy_output_shared"
+    COMMAND ${CMAKE_COMMAND} -E tar cvf "${ROOT_DIR}/${ZIP_FILE_NAME}" --format=zip .
+    COMMAND ${CMAKE_COMMAND} -E rename "${ROOT_DIR}/${ZIP_FILE_NAME}" "${DEPLOY_DIR}/${ZIP_FILE_NAME}"
+    WORKING_DIRECTORY "${DEPLOY_DIR}"
+    VERBATIM
+)
+
+#########################
+# TESTS CONFIG
+#########################
 # Add tests subdirectory (creates the "tests" target).
 add_subdirectory(Tests)

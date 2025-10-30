@@ -1,6 +1,7 @@
 #include "Bridge.h"
 
 #include "ActionManager.h"
+#include "Animation.h"
 #include "Animator.h"
 #include "AssetManager.h"
 #include "CursorManager.h"
@@ -9,7 +10,7 @@
 #include "GKActor.h"
 #include "GKObject.h"
 #include "InputManager.h"
-#include "MeshRenderer.h"
+#include "PersistState.h"
 #include "SceneManager.h"
 
 namespace
@@ -60,13 +61,24 @@ Bridge::Bridge()
     SetTilePosition(8, 1, 10);
 }
 
+void Bridge::OnPersist(PersistState& ps)
+{
+    ps.Xfer(PERSIST_VAR(mGabeStartedPuzzle));
+    ps.Xfer(PERSIST_VAR(mGabeTileIndex));
+
+    for(int i = 0; i < kTileCount; ++i)
+    {
+        ps.Xfer<TileState, int>("", mTiles[i].state);
+        ps.Xfer("", mTiles[i].stateTimer);
+        ps.Xfer("", mTiles[i].stateDuration);
+        ps.Xfer("", mTiles[i].animFrame);
+    }
+}
+
 void Bridge::OnUpdate(float deltaTime)
 {
     // Check if Gabe is standing at the start of the puzzle.
-    Vector3 gabePos = mGabeActor->GetPosition();
-    Vector2 gabeXZPos(gabePos.x, gabePos.z);
-    bool atPuzzleStart = (gabeXZPos - kStartPuzzlePosition).GetLengthSq() <= kStartPuzzleDistanceSq;
-    if(atPuzzleStart)
+    if(AtPuzzleStart())
     {
         // If haven't played the start-of-puzzle cutscene yet, do that.
         if(!mGabeStartedPuzzle)
@@ -82,6 +94,7 @@ void Bridge::OnUpdate(float deltaTime)
         }
     }
 
+    /*
     // While in the puzzle, update sleeping tiles so that they reappear after some time has passed.
     bool inPuzzle = mGabeTileIndex >= 0 || atPuzzleStart;
     if(inPuzzle)
@@ -107,9 +120,19 @@ void Bridge::OnUpdate(float deltaTime)
             }
         }
     }
+    */
+
+    UpdateTiles(deltaTime);
 
     // Update custom interaction for the bridge puzzle.
     UpdateInteract();
+}
+
+bool Bridge::AtPuzzleStart() const
+{
+    Vector3 gabePos = mGabeActor->GetPosition();
+    Vector2 gabeXZPos(gabePos.x, gabePos.z);
+    return (gabeXZPos - kStartPuzzlePosition).GetLengthSq() <= kStartPuzzleDistanceSq;
 }
 
 void Bridge::Die(bool duringJump)
@@ -153,6 +176,13 @@ void Bridge::GlintTile(int index)
 {
     if(index >= 0 && index < kTileCount)
     {
+        mTiles[index].state = TileState::Glinting;
+        mTiles[index].stateTimer = 0.0f;
+        mTiles[index].stateDuration = mTiles[index].glintAnim->GetDuration();
+        mTiles[index].animFrame = -1;
+
+
+        /*
         // Make sure no longer doing glow anim.
         gSceneManager.GetScene()->GetAnimator()->Stop(mTiles[index].glowAnim, true);
 
@@ -169,6 +199,7 @@ void Bridge::GlintTile(int index)
                 SleepTile(index, 2.0f);
             }
         });
+        */
     }
 }
 
@@ -176,6 +207,12 @@ void Bridge::GlowTile(int index)
 {
     if(index >= 0 && index < kTileCount)
     {
+        mTiles[index].state = TileState::Glowing;
+        mTiles[index].stateTimer = 0.0f;
+        mTiles[index].stateDuration = mTiles[index].glowAnim->GetDuration();
+        mTiles[index].animFrame = -1;
+
+        /*
         // Make sure no longer doing glint anim.
         gSceneManager.GetScene()->GetAnimator()->Stop(mTiles[index].glintAnim, true);
 
@@ -195,6 +232,7 @@ void Bridge::GlowTile(int index)
                 Die(false);
             }
         });
+        */
     }
 }
 
@@ -202,9 +240,9 @@ void Bridge::SleepTile(int index, float sleepTime)
 {
     if(index >= 0 && index < kTileCount)
     {
-        mTiles[index].tileActor->SetActive(false);
         mTiles[index].state = TileState::Sleeping;
-        mTiles[index].stateTimer = sleepTime;
+        mTiles[index].stateTimer = 0.0f;
+        mTiles[index].stateDuration = sleepTime;
     }
 }
 
@@ -454,6 +492,88 @@ void Bridge::JumpToTile(int index)
     });
 }
 
+void Bridge::UpdateTiles(float deltaTime)
+{
+    // Update each tile in turn.
+    for(int index = 0; index < kTileCount; ++index)
+    {
+        // Each tile is active as long as not in OFF or SLEEP states.
+        Tile& tile = mTiles[index];
+        tile.tileActor->SetActive(tile.state != TileState::Off && tile.state != TileState::Sleeping);
+
+        // Increment current state timer.
+        tile.stateTimer += deltaTime;
+
+        // Update based on current state.
+        int currentFrame = 0;
+        switch(tile.state)
+        {
+            case TileState::Off:
+            default:
+                break;
+
+            case TileState::Glinting:
+                // Go through the animation as time passes.
+                currentFrame = static_cast<int>(tile.stateTimer / tile.glintAnim->GetFrameDuration());
+                for(int i = tile.animFrame + 1; i <= currentFrame; ++i)
+                {
+                    gSceneManager.GetScene()->GetAnimator()->Sample(tile.glintAnim, i);
+                }
+
+                // Once the animation ends, as long as not jumping to this tile, go to sleep state.
+                if(tile.stateTimer >= tile.stateDuration)
+                {
+                    if(mJumpTileIndex != index)
+                    {
+                        SleepTile(index, 2.0f);
+                    }
+                }
+                break;
+
+            case TileState::Glowing:
+                // Go through the animation as time passes.
+                currentFrame = static_cast<int>(tile.stateTimer / tile.glowAnim->GetFrameDuration());
+                for(int i = tile.animFrame + 1; i <= currentFrame; ++i)
+                {
+                    gSceneManager.GetScene()->GetAnimator()->Sample(tile.glowAnim, i);
+                }
+
+                // Once the animation ends, as long as not jumping to this tile, go to sleep state.
+                if(tile.stateTimer >= tile.stateDuration)
+                {
+                    // After glowing, sleep for a bit.
+                    SleepTile(index, 2.0f);
+
+                    // If Gabe is still standing on this platform when it finishes glowing, he unfortunately MUST DIE!
+                    if(!mJumping && mGabeTileIndex == index)
+                    {
+                        Die(false);
+                    }
+                }
+                break;
+
+            case TileState::Sleeping:
+                // If not in the puzzle, tiles just stay in the sleep state.
+                // But when you do enter the puzzle, they jump back to life.
+                bool inPuzzle = mGabeTileIndex >= 0 || AtPuzzleStart();
+                if(inPuzzle)
+                {
+                    if(tile.stateTimer >= tile.stateDuration)
+                    {
+                        // When done sleeping, glint the tile.
+                        // The first tile ALWAYS glints, even if Gabe isn't on any tile yet.
+                        // Other tiles glint as long as Gabe is standing on one of the tiles.
+                        if(index == 0 || mGabeTileIndex >= 0)
+                        {
+                            GlintTile(index);
+                        }
+                    }
+                }
+                break;
+        }
+    }
+}
+
 void Bridge::UpdateInteract()
 {
     // Assume no forced scene interaction disabled.
@@ -504,7 +624,7 @@ void Bridge::UpdateInteract()
     {
         if(hoveredTileIndex == 0)
         {
-            gCursorManager.UseRedHighlightCursor();
+            gCursorManager.UseRedHighlightCursor(1);
             if(gInputManager.IsMouseButtonTrailingEdge(InputManager::MouseButton::Left))
             {
                 JumpToTile(hoveredTileIndex);
@@ -517,7 +637,7 @@ void Bridge::UpdateInteract()
         // If it's a bad choice though, he might not make the jump...
         if(hoveredTileIndex >= 0 && hoveredTileIndex != mGabeTileIndex)
         {
-            gCursorManager.UseRedHighlightCursor();
+            gCursorManager.UseRedHighlightCursor(1);
             if(gInputManager.IsMouseButtonTrailingEdge(InputManager::MouseButton::Left))
             {
                 JumpToTile(hoveredTileIndex);

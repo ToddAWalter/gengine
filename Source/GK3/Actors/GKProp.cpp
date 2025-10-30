@@ -5,23 +5,22 @@
 #include "GasPlayer.h"
 #include "MeshRenderer.h"
 #include "Model.h"
-#include "Quaternion.h"
+#include "PersistState.h"
 #include "SceneData.h"
-#include "Vector3.h"
 #include "VertexAnimator.h"
 
 TYPEINFO_INIT(GKProp, GKObject, 32)
 {
-    
+
 }
 
 GKProp::GKProp() : GKObject()
 {
     mMeshRenderer = AddComponent<MeshRenderer>();
-    mMeshRenderer->SetShader(gAssetManager.LoadShader("3D-Tex-Lit"));
+    mMeshRenderer->SetShader(gAssetManager.GetShader("LitTexture"));
 
     mVertexAnimator = AddComponent<VertexAnimator>();
-    
+
     mGasPlayer = AddComponent<GasPlayer>();
 }
 
@@ -34,7 +33,7 @@ GKProp::GKProp(Model* model) : GKProp()
     SetName(mMeshRenderer->GetModelName());
 
     // If this prop acts as a billboard, add the billboard component to it.
-    if(model->IsBillboard())
+    if(model != nullptr && model->IsBillboard())
     {
         AddComponent<Billboard>();
     }
@@ -80,14 +79,6 @@ void GKProp::Init(const SceneData& sceneData)
     {
         StartFidget(mFidgetGas);
     }
-    
-    // If this is a billboard, force-update it right away.
-    // Doing this on Init, and not waiting for Billboard::OnUpdate to run, avoids a single rendered frame with billboards facing the wrong way.
-    Billboard* billboard = GetComponent<Billboard>();
-    if(billboard != nullptr)
-    {
-        billboard->ForceUpdate();
-    }
 }
 
 void GKProp::StartFidget(GAS* gas)
@@ -109,20 +100,20 @@ void GKProp::StartAnimation(VertexAnimParams& animParams)
 {
     // Don't let a GAS anim override a non-GAS anim.
     if(animParams.fromAutoScript && mVertexAnimator->IsPlayingNotAutoscript()) { return; }
-    
+
     // If this is not a GAS anim, pause any running GAS.
     if(!animParams.fromAutoScript)
     {
         mGasPlayer->Pause();
     }
-    
+
     // Set anim stop callback.
     animParams.stopCallback = std::bind(&GKProp::OnVertexAnimationStop, this);
-    
+
     // Start the animation.
     // Note that this will sample the first frame of the animation, updating the model's positions/rotations.
     mVertexAnimator->Start(animParams);
-    
+
     // For absolute anims, position model exactly as specified.
     if(animParams.absolute)
     {
@@ -150,7 +141,7 @@ void GKProp::StopAnimation(VertexAnimation* anim)
     mVertexAnimator->Stop(anim);
 }
 
-AABB GKProp::GetAABB()
+AABB GKProp::GetAABB() const
 {
     return mMeshRenderer->GetAABB();
 }

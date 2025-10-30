@@ -1,44 +1,69 @@
 #include "WalkerBoundary.h"
 
 #include <queue>
-#include <unordered_map>
-#include <unordered_set>
 
+#include "Actor.h"
 #include "Debug.h"
 #include "GMath.h"
+#include "PersistState.h"
 #include "ResizableQueue.h"
 #include "Texture.h"
+#include "Walker.h"
+
+namespace
+{
+    void MoveToward(Vector2& current, const Vector2& end)
+    {
+        // Move current toward end, one unit at a time.
+        if(current.x < end.x)
+        {
+            current.x += 1;
+        }
+        else if(current.x > end.x)
+        {
+            current.x -= 1;
+        }
+        if(current.y < end.y)
+        {
+            current.y += 1;
+        }
+        else if(current.y > end.y)
+        {
+            current.y -= 1;
+        }
+    }
+}
 
 bool WalkerBoundary::FindPath(const Vector3& fromWorldPos, const Vector3& toWorldPos, std::vector<Vector3>& outPath)
 {
-	// Make sure path vector is empty.
-	outPath.clear();
-	
-	// Pick goal position. If "to" is walkable, we can use it directly.
+    // Make sure path vector is empty.
+    outPath.clear();
+
+    // Pick goal position. If "to" is walkable, we can use it directly.
     // Otherwise, find the nearest walkable position to "to".
-	Vector2 goal;
-	if(IsWorldPosWalkable(toWorldPos))
-	{
-		goal = WorldPosToTexturePos(toWorldPos);
-	}
-	else
-	{
-		// If "to" is not walkable, we need to find nearest walkable position as our goal.
-		goal = FindNearestWalkableTexturePosToWorldPos(toWorldPos);
-	}
-    
-	// Pick start position. If "from" is walkable, we can use it directly.
-	Vector2 start;
-	if(IsWorldPosWalkable(fromWorldPos))
-	{
-		start = WorldPosToTexturePos(fromWorldPos);
-	}
-	else
-	{
-		// If "from" is not walkable, find nearest walkable and use that instead.
-		// Walker will move from current (unwalkable) position to this position when it starts walking.
-		start = FindNearestWalkableTexturePosToWorldPos(fromWorldPos);
-	}
+    Vector2 goal;
+    if(IsWorldPosWalkable(toWorldPos))
+    {
+        goal = WorldPosToTexturePos(toWorldPos);
+    }
+    else
+    {
+        // If "to" is not walkable, we need to find nearest walkable position as our goal.
+        goal = FindNearestWalkableTexturePosToWorldPos(toWorldPos);
+    }
+
+    // Pick start position. If "from" is walkable, we can use it directly.
+    Vector2 start;
+    if(IsWorldPosWalkable(fromWorldPos))
+    {
+        start = WorldPosToTexturePos(fromWorldPos);
+    }
+    else
+    {
+        // If "from" is not walkable, find nearest walkable and use that instead.
+        // Walker will move from current (unwalkable) position to this position when it starts walking.
+        start = FindNearestWalkableTexturePosToWorldPos(fromWorldPos);
+    }
 
     // Use BFS to find a path.
     // I have implementations of both BFS and A* below - I've consistently found BFS to have better performance and results than A*.
@@ -67,7 +92,8 @@ bool WalkerBoundary::FindPath(const Vector3& fromWorldPos, const Vector3& toWorl
         }
     }
 
-    // If we found a path, do some processing on it.
+    // If a path was generated, do some conditioning on it to make it look more intelligent.
+    // Note that a path can be generated, even if "foundPath" is false. In that case, the path is a "best effort" to get close to the goal.
     if(!path.empty())
     {
         // Ok, we found a path, but it's probably too close to walls and such.
@@ -87,44 +113,52 @@ bool WalkerBoundary::FindPath(const Vector3& fromWorldPos, const Vector3& toWorl
 
             // ANYWAY, here's the idea: if the current index is less than 128, see if a neighbor is a lower palette index.
             // If so, we will want to walk there instead. If no, this is a less than ideal place to walk, but at least it is walkable.
-            int index = mTexture->GetPaletteIndex(path[i].x, path[i].y);
+            int index = mTexture->GetPixelPaletteIndex(path[i].x, path[i].y);
             if(index < 128)
             {
                 while(true)
                 {
                     // If any up/down/left/right has a lower palette index, go there!
-                    if(mTexture->GetPaletteIndex(path[i].x + 1, path[i].y) < index)
+                    if(mTexture->GetPixelPaletteIndex(path[i].x + 1, path[i].y) < index &&
+                       IsTexturePosWalkable(Vector2(path[i].x + 1, path[i].y)))
                     {
                         path[i].x += 1;
                     }
-                    else if(mTexture->GetPaletteIndex(path[i].x - 1, path[i].y) < index)
+                    else if(mTexture->GetPixelPaletteIndex(path[i].x - 1, path[i].y) < index &&
+                            IsTexturePosWalkable(Vector2(path[i].x - 1, path[i].y)))
                     {
                         path[i].x -= 1;
                     }
-                    else if(mTexture->GetPaletteIndex(path[i].x, path[i].y + 1) < index)
+                    else if(mTexture->GetPixelPaletteIndex(path[i].x, path[i].y + 1) < index &&
+                            IsTexturePosWalkable(Vector2(path[i].x, path[i].y + 1)))
                     {
                         path[i].y += 1;
                     }
-                    else if(mTexture->GetPaletteIndex(path[i].x, path[i].y - 1) < index)
+                    else if(mTexture->GetPixelPaletteIndex(path[i].x, path[i].y - 1) < index &&
+                            IsTexturePosWalkable(Vector2(path[i].x, path[i].y - 1)))
                     {
                         path[i].y -= 1;
                     }
-                    else if(mTexture->GetPaletteIndex(path[i].x + 1, path[i].y + 1) < index)
+                    else if(mTexture->GetPixelPaletteIndex(path[i].x + 1, path[i].y + 1) < index &&
+                            IsTexturePosWalkable(Vector2(path[i].x + 1, path[i].y + 1)))
                     {
                         path[i].x += 1;
                         path[i].y += 1;
                     }
-                    else if(mTexture->GetPaletteIndex(path[i].x + 1, path[i].y - 1) < index)
+                    else if(mTexture->GetPixelPaletteIndex(path[i].x + 1, path[i].y - 1) < index &&
+                            IsTexturePosWalkable(Vector2(path[i].x + 1, path[i].y - 1)))
                     {
                         path[i].x += 1;
                         path[i].y -= 1;
                     }
-                    else if(mTexture->GetPaletteIndex(path[i].x - 1, path[i].y - 1) < index)
+                    else if(mTexture->GetPixelPaletteIndex(path[i].x - 1, path[i].y - 1) < index &&
+                            IsTexturePosWalkable(Vector2(path[i].x - 1, path[i].y - 1)))
                     {
                         path[i].x -= 1;
                         path[i].y -= 1;
                     }
-                    else if(mTexture->GetPaletteIndex(path[i].x - 1, path[i].y + 1) < index)
+                    else if(mTexture->GetPixelPaletteIndex(path[i].x - 1, path[i].y + 1) < index &&
+                            IsTexturePosWalkable(Vector2(path[i].x - 1, path[i].y + 1)))
                     {
                         path[i].x -= 1;
                         path[i].y += 1;
@@ -136,8 +170,10 @@ bool WalkerBoundary::FindPath(const Vector3& fromWorldPos, const Vector3& toWorl
                     }
 
                     // Update index being considered for next run through loop.
-                    index = mTexture->GetPaletteIndex(path[i].x, path[i].y);
-                    if(index < 6)
+                    index = mTexture->GetPixelPaletteIndex(path[i].x, path[i].y);
+
+                    // If the palette index is below some threshold, we're in an "acceptably walkable" zone, so we can stop iterating.
+                    if(index < 4)
                     {
                         break;
                     }
@@ -161,22 +197,7 @@ bool WalkerBoundary::FindPath(const Vector3& fromWorldPos, const Vector3& toWorl
                 bool canWalk = true;
                 while(current != end)
                 {
-                    if(current.x < end.x)
-                    {
-                        current.x += 1;
-                    }
-                    else if(current.x > end.x)
-                    {
-                        current.x -= 1;
-                    }
-                    if(current.y < end.y)
-                    {
-                        current.y += 1;
-                    }
-                    else if(current.y > end.y)
-                    {
-                        current.y -= 1;
-                    }
+                    MoveToward(current, end);
 
                     if(!IsTexturePosWalkable(current))
                     {
@@ -185,7 +206,7 @@ bool WalkerBoundary::FindPath(const Vector3& fromWorldPos, const Vector3& toWorl
                     }
                     else
                     {
-                        int paletteIndex = mTexture->GetPaletteIndex(current.x, current.y);
+                        int paletteIndex = mTexture->GetPixelPaletteIndex(current.x, current.y);
                         if(paletteIndex > 6 && paletteIndex < 128)
                         {
                             canWalk = false;
@@ -217,27 +238,27 @@ bool WalkerBoundary::FindPath(const Vector3& fromWorldPos, const Vector3& toWorl
                 }
             }
         }
-        
+
         // Convert texture-space path to world-space path.
         for(auto& node : path)
         {
             outPath.push_back(TexturePosToWorldPos(node));
         }
-        return true;
     }
 
-    printf("Failed to find path!\n");
-    return false;
+    // Whether a path was generated or not, return whether we found a path.
+    // The caller can decide if the "best effort" path is worth using at all, or if the walk should just be abandoned.
+    return foundPath;
 }
 
 Vector3 WalkerBoundary::FindNearestWalkablePosition(const Vector3& worldPos) const
 {
-	// Easy case: the position provided is already walkable.
-	if(IsWorldPosWalkable(worldPos)) { return worldPos; }
-	
-	// Find nearest walkable position on texture, convert to world space.
-	Vector2 walkableTexturePos = FindNearestWalkableTexturePosToWorldPos(worldPos);
-	return TexturePosToWorldPos(walkableTexturePos);
+    // Easy case: the position provided is already walkable.
+    if(IsWorldPosWalkable(worldPos)) { return worldPos; }
+
+    // Find nearest walkable position on texture, convert to world space.
+    Vector2 walkableTexturePos = FindNearestWalkableTexturePosToWorldPos(worldPos);
+    return TexturePosToWorldPos(walkableTexturePos);
 }
 
 void WalkerBoundary::SetRegionBlocked(int regionIndex, int regionBoundaryIndex, bool blocked)
@@ -303,20 +324,51 @@ void WalkerBoundary::ClearUnwalkableRect(const std::string& name)
     }
 }
 
-void WalkerBoundary::DrawUnwalkableRects()
+void WalkerBoundary::DrawUnwalkableAreas()
 {
+    // Draw visualization of rectangular areas that will be pathed around.
     for(auto& entry : mUnwalkableRects)
     {
         Vector3 worldMin = TexturePosToWorldPos(entry.second.GetMin());
         Vector3 worldMax = TexturePosToWorldPos(entry.second.GetMax());
         Debug::DrawRectXZ(Rect(Vector2(worldMin.x, worldMin.z), Vector2(worldMax.x, worldMax.z)), 15.0f, Color32::Orange);
     }
+
+    // Draw visualizations of walkers who will be pathed around.
+    for(Walker* walker : mWalkers)
+    {
+        Debug::DrawSphere(walker->GetOwner()->GetPosition(), 10.0f, Color32::Orange);
+    }
+}
+
+void WalkerBoundary::AddWalker(Walker* walker)
+{
+    auto it = std::find(mWalkers.begin(), mWalkers.end(), walker);
+    if(it == mWalkers.end())
+    {
+        mWalkers.push_back(walker);
+    }
+}
+
+void WalkerBoundary::RemoveWalker(Walker * walker)
+{
+    auto it = std::find(mWalkers.begin(), mWalkers.end(), walker);
+    if(it != mWalkers.end())
+    {
+        mWalkers.erase(it);
+    }
+}
+
+void WalkerBoundary::OnPersist(PersistState& ps)
+{
+    ps.Xfer(PERSIST_VAR(mUnwalkableRegions));
+    ps.Xfer(PERSIST_VAR(mUnwalkableRects));
 }
 
 bool WalkerBoundary::IsWorldPosWalkable(const Vector3& worldPos) const
 {
-	// Convert to texture position and check that.
-	return IsTexturePosWalkable(WorldPosToTexturePos(worldPos));
+    // Convert to texture position and check that.
+    return IsTexturePosWalkable(WorldPosToTexturePos(worldPos));
 }
 
 bool WalkerBoundary::IsTexturePosWalkable(const Vector2& texturePos) const
@@ -336,107 +388,126 @@ bool WalkerBoundary::IsTexturePosWalkable(const Vector2& texturePos) const
         }
     }
 
+    // Also unwalkable if this position is too close to a walker in the scene.
+    Vector3 worldPos = TexturePosToWorldPos(texturePos);
+    for(Walker* walker : mWalkers)
+    {
+        // Make y-pos equal so that we only consider distance on the x/z plane.
+        Vector3 walkerPos = walker->GetOwner()->GetPosition();
+        walkerPos.y = worldPos.y;
+        float distSq = (worldPos - walkerPos).GetLengthSq();
+
+        // Each walker's radius is about 10 units. There are outliers (like Chicken or Demon), but this mostly works.
+        // BUT we need to factor in the radius of this walker AND myself - so we actually use 20 here!
+        //TODO: If the radius differed per walker, we'd want to query the walkers and sum the radii.
+        const float kCombinedRadiiSq = 20.0f * 20.0f;
+        if(distSq <= kCombinedRadiiSq)
+        {
+            return false;
+        }
+    }
+
     // Looks like it's walkable!
     return true;
 }
 
 Vector2 WalkerBoundary::WorldPosToTexturePos(const Vector3& worldPos) const
 {
-	// If no texture, the end result is going to be zero.
-	if(mTexture == nullptr) { return Vector2::Zero; }
-    
-	// Add walker boundary's world position offset.
-	// This causes the position to be relative to the texture's origin (lower left) instead of the world origin.
-	Vector2 texturePos;
-	texturePos.x = worldPos.x + mOffset.x;
-	texturePos.y = worldPos.z + mOffset.y;
-	//std::cout << "Offset Pos: " << position << std::endl;
-	
-	// Divide position by walkable area size to get a normalized position within that area.
-	// Hopefully 0-1, but could be outside those bounds. If so, not walkable.
-	texturePos.x = texturePos.x / mSize.x;
-	texturePos.y = texturePos.y / mSize.y;
-	//std::cout << "Normalized Pos: " << position << std::endl;
-	
-	// Multiply by texture width/height to determine the pixel within the texture.
-	texturePos.x = texturePos.x * mTexture->GetWidth();
-	texturePos.y = texturePos.y * mTexture->GetHeight();
-	//std::cout << "Pixel Pos: " << position << std::endl;
-	
-	// Need to flip Y because the calculated value is from lower-left of the walkable area.
-	// But texture sample X/Y are from upper-left.
-	texturePos.y = mTexture->GetHeight() - texturePos.y;
-	
-	// Texture positions are integers.
-	texturePos.x = (int)texturePos.x;
-	texturePos.y = (int)texturePos.y;
-	return texturePos;
+    // If no texture, the end result is going to be zero.
+    if(mTexture == nullptr) { return Vector2::Zero; }
+
+    // Add walker boundary's world position offset.
+    // This causes the position to be relative to the texture's origin (lower left) instead of the world origin.
+    Vector2 texturePos;
+    texturePos.x = worldPos.x + mOffset.x;
+    texturePos.y = worldPos.z + mOffset.y;
+    //std::cout << "Offset Pos: " << position << std::endl;
+
+    // Divide position by walkable area size to get a normalized position within that area.
+    // Hopefully 0-1, but could be outside those bounds. If so, not walkable.
+    texturePos.x = texturePos.x / mSize.x;
+    texturePos.y = texturePos.y / mSize.y;
+    //std::cout << "Normalized Pos: " << position << std::endl;
+
+    // Multiply by texture width/height to determine the pixel within the texture.
+    texturePos.x = texturePos.x * mTexture->GetWidth();
+    texturePos.y = texturePos.y * mTexture->GetHeight();
+    //std::cout << "Pixel Pos: " << position << std::endl;
+
+    // Need to flip Y because the calculated value is from lower-left of the walkable area.
+    // But texture sample X/Y are from upper-left.
+    texturePos.y = mTexture->GetHeight() - texturePos.y;
+
+    // Texture positions are integers.
+    texturePos.x = (int)texturePos.x;
+    texturePos.y = (int)texturePos.y;
+    return texturePos;
 }
 
 Vector3 WalkerBoundary::TexturePosToWorldPos(Vector2 texturePos) const
 {
-	// If no texture, the end result is going to be zero.
-	if(mTexture == nullptr) { return Vector3::Zero; }
-    
+    // If no texture, the end result is going to be zero.
+    if(mTexture == nullptr) { return Vector3::Zero; }
+
     // A texture pos actually correlates to the bottom-left corner of the pixel.
     // But we want center of pixel...so let's offset before the conversion!
     texturePos.x = texturePos.x + 0.5f;
     texturePos.y = texturePos.y + 0.5f;
-    
-	// Flip y because texture pos is from top-left, but we need lower-left for world pos conversion.
-	texturePos.y = mTexture->GetHeight() - texturePos.y;
-    
-	// Divide by texture width/height to get normalized position within the texture (0-1).
-	Vector3 worldPos;
-	worldPos.x = texturePos.x / mTexture->GetWidth();
-	worldPos.z = texturePos.y / mTexture->GetHeight();
-	
-	// Multiply by size to get unit in world space.
-	worldPos.x = worldPos.x * mSize.x;
-	worldPos.z = worldPos.z * mSize.y;
-	
-	// Subtract offset to go from "texture space" to "world space".
-	worldPos.x = worldPos.x - mOffset.x;
-	worldPos.z = worldPos.z - mOffset.y;
-	return worldPos;
+
+    // Flip y because texture pos is from top-left, but we need lower-left for world pos conversion.
+    texturePos.y = mTexture->GetHeight() - texturePos.y;
+
+    // Divide by texture width/height to get normalized position within the texture (0-1).
+    Vector3 worldPos;
+    worldPos.x = texturePos.x / mTexture->GetWidth();
+    worldPos.z = texturePos.y / mTexture->GetHeight();
+
+    // Multiply by size to get unit in world space.
+    worldPos.x = worldPos.x * mSize.x;
+    worldPos.z = worldPos.z * mSize.y;
+
+    // Subtract offset to go from "texture space" to "world space".
+    worldPos.x = worldPos.x - mOffset.x;
+    worldPos.z = worldPos.z - mOffset.y;
+    return worldPos;
 }
 
 Vector2 WalkerBoundary::FindNearestWalkableTexturePosToWorldPos(const Vector3& worldPos) const
 {
-	// We need a texture.
-	if(mTexture == nullptr) { return Vector2::Zero; }
-	
-	// If the passed in position is already walkable, just return that position in texture space.
-	if(IsWorldPosWalkable(worldPos))
-	{
-		return WorldPosToTexturePos(worldPos);
-	}
-	
-	// Convert target position to texture position.
-	Vector2 targetTexturePos = WorldPosToTexturePos(worldPos);
-	
-	// Let's just brute force this for now - search O(n^2) for the nearest walkable position.
-	// This can probably be more efficient based on whether target is to left/right/above/below/inside the texture.
-	// But these walker boundary textures are really small, and this doesn't get called often, so this might work fine.
-	Vector2 nearestWalkableTexturePos;
-	float nearestDistanceSq = 9999.0f;
-	for(int x = 0; x < mTexture->GetWidth(); ++x)
-	{
-		for(int y = 0; y < mTexture->GetHeight(); ++y)
-		{
-			Vector2 pos(x, y);
-			if(IsTexturePosWalkable(pos))
-			{
-				float distSq = (pos - targetTexturePos).GetLengthSq();
-				if(distSq < nearestDistanceSq)
-				{
-					nearestWalkableTexturePos = pos;
-					nearestDistanceSq = distSq;
-				}
-			}
-		}
-	}
-	return nearestWalkableTexturePos;
+    // We need a texture.
+    if(mTexture == nullptr) { return Vector2::Zero; }
+
+    // If the passed in position is already walkable, just return that position in texture space.
+    if(IsWorldPosWalkable(worldPos))
+    {
+        return WorldPosToTexturePos(worldPos);
+    }
+
+    // Convert target position to texture position.
+    Vector2 targetTexturePos = WorldPosToTexturePos(worldPos);
+
+    // Let's just brute force this for now - search O(n^2) for the nearest walkable position.
+    // This can probably be more efficient based on whether target is to left/right/above/below/inside the texture.
+    // But these walker boundary textures are really small, and this doesn't get called often, so this might work fine.
+    Vector2 nearestWalkableTexturePos;
+    float nearestDistanceSq = 9999.0f;
+    for(int x = 0; x < mTexture->GetWidth(); ++x)
+    {
+        for(int y = 0; y < mTexture->GetHeight(); ++y)
+        {
+            Vector2 pos(x, y);
+            if(IsTexturePosWalkable(pos))
+            {
+                float distSq = (pos - targetTexturePos).GetLengthSq();
+                if(distSq < nearestDistanceSq)
+                {
+                    nearestWalkableTexturePos = pos;
+                    nearestDistanceSq = distSq;
+                }
+            }
+        }
+    }
+    return nearestWalkableTexturePos;
 }
 
 int WalkerBoundary::GetRegionForTexturePos(const Vector2& texturePos) const
@@ -452,7 +523,7 @@ int WalkerBoundary::GetRegionForTexturePos(const Vector2& texturePos) const
     // Palette index 0 is walkable, with indexes 1-9 indicating less and less walkable areas.
     // Palette index 255 is "unwalkable" area.
     // Palette indexes 128-254 are for special regions.
-    return mTexture->GetPaletteIndex(texturePos.x, texturePos.y);
+    return mTexture->GetPixelPaletteIndex(texturePos.x, texturePos.y);
 }
 
 namespace
@@ -478,6 +549,7 @@ bool WalkerBoundary::FindPathBFS(const Vector2& start, const Vector2& goal, std:
     //TIMER_SCOPED("BFS");
 
     // Figure out how many nodes we need for the current walker boundary texture.
+    if(mTexture == nullptr) { return false; }
     uint32_t width = mTexture->GetWidth();
     uint32_t height = mTexture->GetHeight();
     uint32_t nodeCount = width * height;
@@ -496,10 +568,13 @@ bool WalkerBoundary::FindPathBFS(const Vector2& start, const Vector2& goal, std:
     // Make sure open set is empty.
     openSet.Clear();
 
+    // Make sure out path is clear.
+    outPath.clear();
+
     // What do we mean by "fidelity"?
     // These walker graphs are very dense (1 pixel equals one node). By skipping some pixels, we get a simpler graph, and a faster algorithm.
     // A fidelity of 2 only uses every other pixel, 3 only uses every third pixel, and so on.
-    
+
     // Calculate start point index, ensuring it aligns with the desired graph fidelity.
     uint32_t startX = static_cast<uint32_t>(start.x);
     uint32_t startY = static_cast<uint32_t>(start.y);
@@ -529,13 +604,18 @@ bool WalkerBoundary::FindPathBFS(const Vector2& start, const Vector2& goal, std:
         goalY = goalY / nodeSkipInterval * nodeSkipInterval;
     }
     size_t goalIndex = static_cast<size_t>(goalY * width + goalX);
+    Vector2 goalValue(goalX, goalY);
 
-    // If start and goal are the same point, we can early out.
+    // If start and goal are the same point, we technically found a path.
     if(startIndex == goalIndex)
     {
-        outPath.clear();
         return true;
     }
+
+    // As we do the BFS, keep track of which node from the open set comes closest to the goal node.
+    // We'll use this as a backup for generating a path if the goal node is unreachable.
+    size_t closestToGoalNodeIndex = nodes.size();
+    float closestToGoalDistSq = 0.0f;
 
     // Iterate until we either find the goal, or the open set is empty.
     Vector2 neighbors[8];
@@ -558,6 +638,14 @@ bool WalkerBoundary::FindPathBFS(const Vector2& start, const Vector2& goal, std:
         neighbors[6] = currentValue + Vector2(-nodeSkipInterval, nodeSkipInterval);
         neighbors[7] = currentValue + Vector2(-nodeSkipInterval, -nodeSkipInterval);
 
+        // If this node is closer to the goal than any node we've yet seen, save it as the closest.
+        float distToGoalSq = (goalValue - currentValue).GetLengthSq();
+        if(closestToGoalNodeIndex >= nodes.size() || distToGoalSq < closestToGoalDistSq)
+        {
+            closestToGoalDistSq = distToGoalSq;
+            closestToGoalNodeIndex = currentIndex;
+        }
+
         // See if we should add neighbors to open set.
         for(Vector2& neighbor : neighbors)
         {
@@ -573,11 +661,20 @@ bool WalkerBoundary::FindPathBFS(const Vector2& start, const Vector2& goal, std:
             if(neighborNode.closed) { continue; }
 
             // Ignore any neighbor that is not walkable.
-            if(!IsTexturePosWalkable(neighbor))
+            // When pathing at higher skip intervals, we still need to check in-between nodes, in case they are unwalkable.
+            bool walkable = true;
+            Vector2 checkWalkableValue = currentValue;
+            while(checkWalkableValue != neighbor)
             {
-                continue;
+                MoveToward(checkWalkableValue, neighbor);
+                if(!IsTexturePosWalkable(checkWalkableValue))
+                {
+                    walkable = false;
+                    break;
+                }
             }
-            
+            if(!walkable) { continue; }
+
             // Add to open set.
             neighborNode.parentIndex = currentIndex;
             neighborNode.closed = true;
@@ -588,29 +685,50 @@ bool WalkerBoundary::FindPathBFS(const Vector2& start, const Vector2& goal, std:
         openSet.Pop();
     }
 
-    // If open set is empty, we did not find the goal. No path can be generated.
+    // If the open set is empty, it means we didn't find a path to the goal.
+    // However, we can still provide an "as close as possible" path that attempts to get as close to the goal as possible.
     if(openSet.Empty())
     {
+        // If no closest to goal node was identified (unlikely), then we really did find no path.
+        // Return false with an empty path.
+        if(closestToGoalNodeIndex >= nodes.size())
+        {
+            return false;
+        }
+
+        // Otherwise, generate a path from the closest node back to the start.
+        size_t current = closestToGoalNodeIndex;
+        while(current != startIndex)
+        {
+            outPath.push_back(Vector2(current % width, current / width));
+            current = nodes[current].parentIndex;
+        }
+        outPath.push_back(start);
+
+        // We still return false here (didn't find a path to the goal).
+        // But the caller can choose to just use the provided "close as possible" path if it makes sense to do so.
         return false;
     }
-
-    // Make sure the actual goal is the first point on the path.
-    outPath.push_back(goal);
-
-    // Iterate back to start, pushing world position of each node onto our path.
-    // This leaves the path with start node at back, goal node at front - caller can traverse back-to-front.
-    size_t current = nodes[openSet.Front()].parentIndex;
-    while(current != startIndex)
+    else // we found a path!
     {
-        outPath.push_back(Vector2(current % width, current / width));
-        current = nodes[current].parentIndex;
+        // Make sure the actual goal is the first point on the path.
+        outPath.push_back(goal);
+
+        // Iterate back to start, pushing world position of each node onto our path.
+        // This leaves the path with start node at back, goal node at front - caller can traverse back-to-front.
+        size_t current = nodes[openSet.Front()].parentIndex;
+        while(current != startIndex)
+        {
+            outPath.push_back(Vector2(current % width, current / width));
+            current = nodes[current].parentIndex;
+        }
+
+        // Make sure the actual start is the last point on the path.
+        outPath.push_back(start);
+
+        // We found a path! Noice.
+        return true;
     }
-
-    // Make sure the actual start is the last point on the path.
-    outPath.push_back(start);
-
-    // We found a path! Noice.
-    return true;
 }
 
 namespace

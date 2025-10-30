@@ -1,98 +1,98 @@
 #include "BinocsOverlay.h"
 
 #include "ActionManager.h"
-#include "Animator.h"
 #include "AssetManager.h"
 #include "BSP.h"
 #include "Camera.h"
 #include "GameCamera.h"
 #include "GameProgress.h"
 #include "GEngine.h"
+#include "GKPrefs.h"
 #include "IniParser.h"
 #include "LocationManager.h"
-#include "Renderer.h"
 #include "TextAsset.h"
 #include "Texture.h"
 #include "Scene.h"
-#include "SceneGeometryData.h"
 #include "SceneManager.h"
 #include "SheepManager.h"
 #include "UIButton.h"
 #include "UICanvas.h"
 #include "UIImage.h"
 #include "UIUtil.h"
+#include "Window.h"
 
-BinocsOverlay::BinocsOverlay() : Actor("BinocsOverlay", TransformType::RectTransform)
+BinocsOverlay::BinocsOverlay() : Actor("BinocsOverlay", TransformType::RectTransform),
+    mLayer("BinocsLayer")
 {
     // Add canvas to render UI elements.
-    AddComponent<UICanvas>(5);
+    mCanvas = UI::AddCanvas(this, 5);
 
     // Add base binocs image with cutout center.
-    UIImage* baseImage = UIUtil::NewUIActorWithWidget<UIImage>(this);
-    baseImage->SetTexture(gAssetManager.LoadTexture("BINOCMASK.BMP"), true);
-    baseImage->SetReceivesInput(true);
+    mCutoutImage = UI::CreateWidgetActor<UIImage>("Mask", this);
+    mCutoutImage->SetTexture(gAssetManager.LoadTexture("BINOCMASK.BMP"), true);
+    mCutoutImage->SetReceivesInput(true);
 
     // Depending on your resolution, there can be a lot of scene visible outside the binocs image.
     // Add black overlays to cover this.
     {
-        UIImage* topImage = UIUtil::NewUIActorWithWidget<UIImage>(this);
-        topImage->SetTexture(&Texture::Black);
-        topImage->GetRectTransform()->SetAnchoredPosition(0.0f, 240.0f);
-        topImage->GetRectTransform()->SetPivot(0.5f, 0.0f);
-        topImage->GetRectTransform()->SetSizeDelta(10000.0f, 10000.0f);
+        mTopImage = UI::CreateWidgetActor<UIImage>("TopBG", this);
+        mTopImage->SetTexture(&Texture::Black);
+        mTopImage->GetRectTransform()->SetAnchoredPosition(0.0f, 240.0f);
+        mTopImage->GetRectTransform()->SetPivot(0.5f, 0.0f);
+        mTopImage->GetRectTransform()->SetSizeDelta(10000.0f, 10000.0f);
     }
     {
-        UIImage* bottomImage = UIUtil::NewUIActorWithWidget<UIImage>(this);
-        bottomImage->SetTexture(&Texture::Black);
-        bottomImage->GetRectTransform()->SetAnchoredPosition(0.0f, -240.0f);
-        bottomImage->GetRectTransform()->SetPivot(0.5f, 1.0f);
-        bottomImage->GetRectTransform()->SetSizeDelta(10000.0f, 10000.0f);
+        mBottomImage = UI::CreateWidgetActor<UIImage>("BottomBG", this);
+        mBottomImage->SetTexture(&Texture::Black);
+        mBottomImage->GetRectTransform()->SetAnchoredPosition(0.0f, -240.0f);
+        mBottomImage->GetRectTransform()->SetPivot(0.5f, 1.0f);
+        mBottomImage->GetRectTransform()->SetSizeDelta(10000.0f, 10000.0f);
     }
     {
-        UIImage* leftImage = UIUtil::NewUIActorWithWidget<UIImage>(this);
-        leftImage->SetTexture(&Texture::Black);
-        leftImage->GetRectTransform()->SetAnchoredPosition(-320.0f, 0.0f);
-        leftImage->GetRectTransform()->SetPivot(1.0f, 0.5f);
-        leftImage->GetRectTransform()->SetSizeDelta(10000.0f, 10000.0f);
+        mLeftImage = UI::CreateWidgetActor<UIImage>("LeftBG", this);
+        mLeftImage->SetTexture(&Texture::Black);
+        mLeftImage->GetRectTransform()->SetAnchoredPosition(-320.0f, 0.0f);
+        mLeftImage->GetRectTransform()->SetPivot(1.0f, 0.5f);
+        mLeftImage->GetRectTransform()->SetSizeDelta(10000.0f, 10000.0f);
     }
     {
-        UIImage* rightImage = UIUtil::NewUIActorWithWidget<UIImage>(this);
-        rightImage->SetTexture(&Texture::Black);
-        rightImage->GetRectTransform()->SetAnchoredPosition(320.0f, 0.0f);
-        rightImage->GetRectTransform()->SetPivot(0.0f, 0.5f);
-        rightImage->GetRectTransform()->SetSizeDelta(10000.0f, 10000.0f);
+        mRightImage = UI::CreateWidgetActor<UIImage>("RightBG", this);
+        mRightImage->SetTexture(&Texture::Black);
+        mRightImage->GetRectTransform()->SetAnchoredPosition(320.0f, 0.0f);
+        mRightImage->GetRectTransform()->SetPivot(0.0f, 0.5f);
+        mRightImage->GetRectTransform()->SetSizeDelta(10000.0f, 10000.0f);
     }
 
     // Add arrow control image at bottom-center.
-    UIImage* arrowsImage = UIUtil::NewUIActorWithWidget<UIImage>(baseImage->GetOwner());
-    arrowsImage->SetTexture(gAssetManager.LoadTexture("BINOCBTNAREA.BMP"), true);
-    arrowsImage->GetRectTransform()->SetAnchor(AnchorPreset::Bottom);
-    arrowsImage->GetRectTransform()->SetAnchoredPosition(0.0f, 19.0f);
+    mArrowButtonsBacking = UI::CreateWidgetActor<UIImage>("Arrows", mCutoutImage);
+    mArrowButtonsBacking->SetTexture(gAssetManager.LoadTexture("BINOCBTNAREA.BMP"), true);
+    mArrowButtonsBacking->GetRectTransform()->SetAnchor(AnchorPreset::Bottom);
+    mArrowButtonsBacking->GetRectTransform()->SetAnchoredPosition(0.0f, 19.0f);
 
     // Add buttons for each arrow direction.
     {
-        mUpButton = UIUtil::NewUIActorWithWidget<UIButton>(arrowsImage->GetOwner());
+        mUpButton = UI::CreateWidgetActor<UIButton>("UpButton", mArrowButtonsBacking);
         mUpButton->SetUpTexture(gAssetManager.LoadTexture("BINOCBTNUPU.BMP"));
         mUpButton->SetDownTexture(gAssetManager.LoadTexture("BINOCBTNUPD.BMP"));
         mUpButton->GetRectTransform()->SetAnchor(AnchorPreset::BottomLeft);
         mUpButton->GetRectTransform()->SetAnchoredPosition(44.0f, 67.0f);
     }
     {
-        mDownButton = UIUtil::NewUIActorWithWidget<UIButton>(arrowsImage->GetOwner());
+        mDownButton = UI::CreateWidgetActor<UIButton>("DownButton", mArrowButtonsBacking);
         mDownButton->SetUpTexture(gAssetManager.LoadTexture("BINOCBTNDOWNU.BMP"));
         mDownButton->SetDownTexture(gAssetManager.LoadTexture("BINOCBTNDOWND.BMP"));
         mDownButton->GetRectTransform()->SetAnchor(AnchorPreset::BottomLeft);
         mDownButton->GetRectTransform()->SetAnchoredPosition(44.0f, 3.0f);
     }
     {
-        mRightButton = UIUtil::NewUIActorWithWidget<UIButton>(arrowsImage->GetOwner());
+        mRightButton = UI::CreateWidgetActor<UIButton>("RightButton", mArrowButtonsBacking);
         mRightButton->SetUpTexture(gAssetManager.LoadTexture("BINOCBTNRIGHTU.BMP"));
         mRightButton->SetDownTexture(gAssetManager.LoadTexture("BINOCBTNRIGHTD.BMP"));
         mRightButton->GetRectTransform()->SetAnchor(AnchorPreset::BottomLeft);
         mRightButton->GetRectTransform()->SetAnchoredPosition(65.0f, 46.0f);
     }
     {
-        mLeftButton = UIUtil::NewUIActorWithWidget<UIButton>(arrowsImage->GetOwner());
+        mLeftButton = UI::CreateWidgetActor<UIButton>("LeftButton", mArrowButtonsBacking);
         mLeftButton->SetUpTexture(gAssetManager.LoadTexture("BINOCBTNLEFTU.BMP"));
         mLeftButton->SetDownTexture(gAssetManager.LoadTexture("BINOCBTNLEFTD.BMP"));
         mLeftButton->GetRectTransform()->SetAnchor(AnchorPreset::BottomLeft);
@@ -101,7 +101,7 @@ BinocsOverlay::BinocsOverlay() : Actor("BinocsOverlay", TransformType::RectTrans
 
     // Add exit button.
     {
-        UIButton* exitButton = UIUtil::NewUIActorWithWidget<UIButton>(baseImage->GetOwner());
+        UIButton* exitButton = UI::CreateWidgetActor<UIButton>("ExitButton", mCutoutImage);
         exitButton->SetUpTexture(gAssetManager.LoadTexture("BINOCBTNEXITU.BMP"));
         exitButton->SetHoverTexture(gAssetManager.LoadTexture("BINOCBTNEXITHOV.BMP"));
         exitButton->SetDownTexture(gAssetManager.LoadTexture("BINOCBTNEXITD.BMP"));
@@ -116,7 +116,7 @@ BinocsOverlay::BinocsOverlay() : Actor("BinocsOverlay", TransformType::RectTrans
 
     // Add zoom 50x and 5x buttons.
     {
-        UIButton* zoomInButton = UIUtil::NewUIActorWithWidget<UIButton>(baseImage->GetOwner());
+        UIButton* zoomInButton = UI::CreateWidgetActor<UIButton>("ZoomInButton", mCutoutImage);
         zoomInButton->SetUpTexture(gAssetManager.LoadTexture("BINOCBTNZOOMINU.BMP"));
         zoomInButton->SetHoverTexture(gAssetManager.LoadTexture("BINOCBTNZOOMINHOV.BMP"));
         zoomInButton->SetDownTexture(gAssetManager.LoadTexture("BINOCBTNZOOMIND.BMP"));
@@ -129,7 +129,7 @@ BinocsOverlay::BinocsOverlay() : Actor("BinocsOverlay", TransformType::RectTrans
         mZoomInButton = zoomInButton;
     }
     {
-        UIButton* zoomOutButton = UIUtil::NewUIActorWithWidget<UIButton>(baseImage->GetOwner());
+        UIButton* zoomOutButton = UI::CreateWidgetActor<UIButton>("ZoomOutButton", mCutoutImage);
         zoomOutButton->SetUpTexture(gAssetManager.LoadTexture("BINOCBTNZOOMOUTU.BMP"));
         zoomOutButton->SetHoverTexture(gAssetManager.LoadTexture("BINOCBTNZOOMOUTHOV.BMP"));
         zoomOutButton->SetDownTexture(gAssetManager.LoadTexture("BINOCBTNZOOMOUTD.BMP"));
@@ -246,6 +246,12 @@ BinocsOverlay::BinocsOverlay() : Actor("BinocsOverlay", TransformType::RectTrans
 void BinocsOverlay::Show()
 {
     SetActive(true);
+    gLayerManager.PushLayer(&mLayer);
+
+    RefreshUIScaling();
+
+    // HACK: Scene layer should not pause when binocs layer is up.
+    gSceneManager.GetScene()->SetPaused(false);
 
     // The binocs operate using the normal game camera in the current scene, but perform some trickery to make things look right.
     mGameCamera = gSceneManager.GetScene()->GetCamera();
@@ -281,7 +287,9 @@ void BinocsOverlay::Show()
 
 void BinocsOverlay::Hide()
 {
+    if(!IsActive()) { return; }
     SetActive(false);
+    gLayerManager.PopLayer(&mLayer);
 
     // Move the game camera back down to the ground, undoing the upward move when we shows the binocs interface.
     Vector3 camPos = mGameCamera->GetPosition();
@@ -356,6 +364,13 @@ void BinocsOverlay::OnUpdate(float deltaTime)
         float camAngleDegX = Math::ToDegrees(mZoomedOutCameraAngle.x);
         float camAngleDegY = Math::ToDegrees(mZoomedOutCameraAngle.y);
 
+        // Ensure angle is within 0-360 range, since that's the range the zoom in rects are defined within.
+        camAngleDegX = Math::Mod(camAngleDegX, 360.0f);
+        while(camAngleDegX < 0.0f)
+        {
+            camAngleDegX += 360.0f;
+        }
+
         // Figure out if the current camera angle is within the min/max of any locations we can zoom to from this location.
         // If so, we'll save the zoom location code.
         mCamZoomToLocCode.clear();
@@ -380,6 +395,9 @@ void BinocsOverlay::OnUpdate(float deltaTime)
         // Zoom in button is interactable if we have a location we could zoom to.
         mZoomInButton->SetCanInteract(!mCamZoomToLocCode.empty());
     }
+
+    // Keep UI scaled correctly if resolution changes.
+    RefreshUIScaling();
 }
 
 void BinocsOverlay::OnZoomInButtonPressed()
@@ -395,12 +413,9 @@ void BinocsOverlay::OnZoomInButtonPressed()
 
     // Remember the camera's current position, for when we zoom back out.
     mZoomedOutCameraPos = mGameCamera->GetPosition();
-    
+
     // Temporarily change the BSP used to that of the zoomed location.
-    SceneGeometryData geometryData;
-    geometryData.Load(mCurrentZoomLocation->sceneAssetName);
-    geometryData.GetBSP()->SetFloorObjectName(mCurrentZoomLocation->floorModelName);
-    gSceneManager.GetScene()->SetOverrideBSP(geometryData.GetBSP());
+    gSceneManager.GetScene()->OverrideSceneAsset(mCurrentZoomLocation->sceneAssetName, mCurrentZoomLocation->floorModelName);
 
     // Update the camera position and angle for this zoom location.
     mGameCamera->SetPosition(mCurrentZoomLocation->cameraPos);
@@ -440,7 +455,7 @@ void BinocsOverlay::OnZoomInButtonPressed()
 void BinocsOverlay::OnZoomOutButtonPressed()
 {
     // Go back to the normal scene BSP.
-    gSceneManager.GetScene()->ClearOverrideBSP();
+    gSceneManager.GetScene()->ClearSceneAssetOverride();
 
     // Set camera back to the zoomed out position and angle.
     mGameCamera->SetPosition(mZoomedOutCameraPos);
@@ -461,4 +476,62 @@ void BinocsOverlay::OnZoomOutButtonPressed()
 
     // No longer zoomed in.
     mIsZoomedIn = false;
+}
+
+void BinocsOverlay::RefreshUIScaling()
+{
+    Vector2 bgImageSize(640.0f, 480.0f);
+
+    // The original game actually does scale this UI up to match the current resolution.
+    // The logic is similar to the title screen, though the button logic differs.
+    if(Prefs::UseOriginalUIScalingLogic() && Window::GetHeight() <= Prefs::GetMinimumScaleUIHeight())
+    {
+        // Turn off canvas autoscaling. This sets canvas scale to 1, and width/height equal to window width/height.
+        mCanvas->SetAutoScale(false);
+
+        // Resize background image to fit within window size, preserving aspect ratio.
+        mCutoutImage->ResizeToFitPreserveAspect(Window::GetSize());
+
+        // The background image size is now whatever was calculated.
+        bgImageSize = mCutoutImage->GetRectTransform()->GetSizeDelta();
+    }
+    else // not using original game's logic.
+    {
+        // In this case, just use 640x480 and have it auto-scale when the resolution gets too big.
+        mCanvas->SetAutoScale(true);
+        mCutoutImage->ResizeToTexture();
+    }
+
+    // The images around the cutout need to reposition as the cutout size changes.
+    float halfWidth = bgImageSize.x / 2.0f;
+    float halfHeight = bgImageSize.y / 2.0f;
+    mBottomImage->GetRectTransform()->SetAnchoredPosition(0.0f, -halfHeight);
+    mTopImage->GetRectTransform()->SetAnchoredPosition(0.0f, halfHeight);
+    mLeftImage->GetRectTransform()->SetAnchoredPosition(-halfWidth, 0.0f);
+    mRightImage->GetRectTransform()->SetAnchoredPosition(halfWidth, 0.0f);
+
+    // The arrow buttons y-position changes with the screen size.
+    float arrowButtonsY = 19.0f + (bgImageSize.y - 480.0f) * 0.18f;
+    mArrowButtonsBacking->GetRectTransform()->SetAnchoredPosition(0.0f, arrowButtonsY);
+
+    // The exit/zoom buttons also change position. But their logic is a bit more complex.
+    {
+        // First, calculate y-pos and distance between buttons.
+        float sideButtonsY = 63.0f + (bgImageSize.y - 480.0f) * 0.18f;
+        float distBetweenButtons = Math::RoundToInt(Math::Min(30.0f + (bgImageSize.x - 640.0f) * 0.15f, 100.0f));
+
+        // The complexity here is that these buttons are top-left anchored (they don't look right otherwise).
+        // So first, let's calculate their top-left corner positions relative to bottom center.
+        float arrowBackingHalfWidth = mArrowButtonsBacking->GetRectTransform()->GetSizeDelta().x / 2.0f;
+        float buttonWidth = mExitButton->GetRectTransform()->GetSizeDelta().x;
+        float buttonHeight = mExitButton->GetRectTransform()->GetSizeDelta().y;
+        Vector3 exitButtonPos(-arrowBackingHalfWidth - distBetweenButtons - buttonWidth, sideButtonsY + buttonHeight);
+        Vector3 zoomButtonPos(arrowBackingHalfWidth + distBetweenButtons, sideButtonsY + buttonHeight);
+
+        // Then, we can convert the calculated position (relative to bottom center) to be relative to top-left.
+        Vector3 bottomToTopRight(-halfWidth, bgImageSize.y);
+        mExitButton->GetRectTransform()->SetAnchoredPosition(exitButtonPos - bottomToTopRight);
+        mZoomInButton->GetRectTransform()->SetAnchoredPosition(zoomButtonPos - bottomToTopRight);
+        mZoomOutButton->GetRectTransform()->SetAnchoredPosition(zoomButtonPos - bottomToTopRight);
+    }
 }

@@ -29,6 +29,7 @@ class GameCamera;
 class GKActor;
 class GKObject;
 class GKProp;
+class PersistState;
 class Ray;
 struct SceneModel;
 class SIF;
@@ -39,115 +40,126 @@ class Vector3;
 
 struct SceneCastResult
 {
-	RaycastHit hitInfo;
-	GKObject* hitObject = nullptr;
+    RaycastHit hitInfo;
+    GKObject* hitObject = nullptr;
 };
 
 class Scene
 {
 public:
     static const char* GetEgoName();
-    static Animator* GetGlobalAnimator();
 
-	Scene(const std::string& name);
-	~Scene();
-	
-	void Load();
-	void Unload();
+    static Animator* GetGlobalAnimator();
+    static Animator* GetActiveAnimator();
+
+    Scene(const std::string& name);
+    ~Scene();
+
+    void Load();
+    void Unload();
     bool IsLoaded() const { return mSceneData != nullptr; }
 
     void Init();
+    void Enter();
     void Update(float deltaTime);
-	
+
     bool InitEgoPosition(const std::string& positionName);
-	void SetCameraPosition(const std::string& cameraName);
+    void SetCameraPosition(const std::string& cameraName);
     void SetCameraPositionForConversation(const std::string& conversationName, bool isInitial);
     void GlideToCameraPosition(const std::string& cameraName, std::function<void()> finishCallback);
-	
-	SceneCastResult Raycast(const Ray& ray, bool interactiveOnly, GKObject** ignore = nullptr, int ignoreCount = 1) const;
+
+    SceneCastResult Raycast(const Ray& ray, bool interactiveOnly, GKObject** ignore = nullptr, int ignoreCount = 1) const;
     SceneCastResult RaycastAABBs(const Ray& ray, GKObject** ignore = nullptr, int ignoreCount = 1) const;
     void Interact(const Ray& ray, GKObject* interactHint = nullptr);
     void SkipCurrentAction();
-    
-	GKActor* GetEgo() const { return mEgo; }
+
+    GKActor* GetEgo() const { return mEgo; }
     void SetEgo(const std::string& actorName);
 
     BSPActor* GetHitTestObjectByModelName(const std::string& modelName) const;
-	GKObject* GetSceneObjectByModelName(const std::string& modelName) const;
+    GKObject* GetSceneObjectByModelName(const std::string& modelName) const;
     GKProp* GetPropByModelName(const std::string& modelName) const;
 
     GKObject* GetSceneObjectByNoun(const std::string& noun) const;
     GKProp* GetPropByNoun(const std::string& noun) const;
-	GKActor* GetActorByNoun(const std::string& noun) const;
-	
-	const ScenePosition* GetPosition(const std::string& positionName) const;
+    GKActor* GetActorByNoun(const std::string& noun) const;
+
+    const ScenePosition* GetPosition(const std::string& positionName) const;
     float GetFloorY(const Vector3& position) const;
     bool GetFloorInfo(const Vector3& position, float& outHeight, Texture*& outTexture);
-	
-	void ApplyTextureToSceneModel(const std::string& modelName, Texture* texture);
-	void SetSceneModelVisibility(const std::string& modelName, bool visible);
-	bool IsSceneModelVisible(const std::string& modelName) const;
-	bool DoesSceneModelExist(const std::string& modelName) const;
+
+    void ApplyTextureToSceneModel(const std::string& modelName, Texture* texture);
+    void SetSceneModelVisibility(const std::string& modelName, bool visible);
+    bool IsSceneModelVisible(const std::string& modelName) const;
+    bool DoesSceneModelExist(const std::string& modelName) const;
 
     void SetFixedModelLighting(const std::string& modelName, const Color32& color);
-    
+
     void SetPaused(bool paused);
 
-    void InspectActiveObject(std::function<void()> finishCallback);
-    void InspectObject(const std::string& noun, std::function<void()> finishCallback);
-    void UninspectObject(std::function<void()> finishCallback);
+    void InspectActiveObject(const std::function<void()>& finishCallback);
+    void InspectObject(const std::string& noun, const std::function<void()>& finishCallback);
+    void InspectObject(const std::string& noun, const std::string& cameraName, const std::function<void()>& finishCallback);
+    void InspectObject(const std::string& noun, const SceneCamera* camera, const std::function<void()>& finishCallback);
+    void UninspectObject(const std::function<void()>& finishCallback);
 
-    void SetOverrideBSP(BSP* bsp);
-    void ClearOverrideBSP();
+    void OverrideSceneAsset(const std::string& sceneAssetName, const std::string& floorModelName = "");
+    void ClearSceneAssetOverride();
+
+    void SetWalkOverride(const std::function<void()>& callback) { mWalkOverrideCallback = callback; }
 
     SceneData* GetSceneData() const { return mSceneData; }
-	Animator* GetAnimator() const { return mAnimator; }
-	SoundtrackPlayer* GetSoundtrackPlayer() const { return mSoundtrackPlayer; }
-	GameCamera* GetCamera() const { return mCamera; }
+    Animator* GetAnimator() const { return mAnimator; }
+    SoundtrackPlayer* GetSoundtrackPlayer() const { return mSoundtrackPlayer; }
+    GameCamera* GetCamera() const { return mCamera; }
     StatusOverlay* GetStatusOverlay() const { return mStatusOverlay; }
     SceneConstruction& GetConstruction() { return mConstruction; }
-    
+
+    void OnPersist(PersistState& ps);
+    void AddPersistCallback(const std::function<void(PersistState&)>& callback) { mPersistCallbacks.push_back(callback); }
+
 private:
-	// Location is 3-letter code (e.g. DIN).
-    std::string mLocation;
-    
-	// Timeblock is day/time code (e.g. 110A).
-	Timeblock mTimeblock;
-    
     // Layer for the scene.
     SceneLayer mLayer;
-	
-	// Contains scene data references for the current location/timeblock.
-	// If not null, means we're loaded!
-	SceneData* mSceneData = nullptr;
 
-    // On rare occasions (binocs), the scene's BSP gets overridden with another scene's BSP.
+    // Location is 3-letter code (e.g. DIN).
+    std::string mLocation;
+
+    // Timeblock is day/time code (e.g. 110A).
+    Timeblock mTimeblock;
+
+    // Contains scene data references for the current location/timeblock.
+    // If not null, means we're loaded!
+    SceneData* mSceneData = nullptr;
+
+    // On rare occasions (binocs, scene lighting changes), the scene's BSP gets overridden with another scene's BSP.
+    std::string mOverrideSceneName;
     BSP* mOverrideBSP = nullptr;
-	
-	// The animation player for the scene.
-	Animator* mAnimator = nullptr;
-	
-	// The soundtrack player for the scene.
-	SoundtrackPlayer* mSoundtrackPlayer = nullptr;
-	
-    // The game camera used to move around.
-    GameCamera* mCamera = nullptr;
+
+    // The animation player for the scene.
+    Animator* mAnimator = nullptr;
+
+    // The soundtrack player for the scene.
+    SoundtrackPlayer* mSoundtrackPlayer = nullptr;
 
     // The status overlay for the scene.
     StatusOverlay* mStatusOverlay = nullptr;
-	
-	// All actors and props in one list.
-    // Sometimes, we want to treat these guys in a homogenous manner, since both have Models, can be interacted with, etc.
-	std::vector<GKObject*> mPropsAndActors;
-	
-	// Just "actors".
-	std::vector<GKActor*> mActors;
-	
-	// Just "props".
-	std::vector<GKProp*> mProps;
-	
-	// Actors in the BSP.
-	std::vector<BSPActor*> mBSPActors;
+
+    // The game camera used to move around.
+    GameCamera* mCamera = nullptr;
+
+    // All actors and props in one list. Includes GKProps, GKActors, and BSPActors.
+    // Sometimes, we want to treat these guys in a homogenous manner, since all have a common API in some cases.
+    std::vector<GKObject*> mPropsAndActors;
+
+    // Just "actors".
+    std::vector<GKActor*> mActors;
+
+    // Just "props".
+    std::vector<GKProp*> mProps;
+
+    // Actors in the BSP.
+    std::vector<BSPActor*> mBSPActors;
 
     // Actors that are marked as hit test models.
     std::vector<BSPActor*> mHitTestActors;
@@ -155,8 +167,8 @@ private:
     // The skyboxes can also have hit tests, but they use a different system!
     // In this case, a palette index is mapped to a simple object with a noun.
     std::unordered_map<uint8_t, GKObject*> mSkyboxHitTests;
-	
-	// The Actor the player is controlling in this scene.
+
+    // The Actor the player is controlling in this scene.
     const SceneActor* mEgoSceneActor = nullptr;
     GKActor* mEgo = nullptr;
 
@@ -174,9 +186,19 @@ private:
     // Helper class for dealing with scene construction (e.g. editor/tool) support.
     SceneConstruction mConstruction;
 
+    // If set, Ego won't walk when the floor is clicked - instead this callback will be called.
+    std::function<void()> mWalkOverrideCallback = nullptr;
+
+    // During save/load, scene-specific objects can register to be included in the save/load code.
+    // For example, in the Chessboard scene, the Chessboard object registers a callback so it can save/load chessboard state as part of a save.
+    std::vector<std::function<void(PersistState&)>> mPersistCallbacks;
+
+    GKObject* CreateSceneModel(const SceneModel* sceneModel);
+    GKActor* CreateSceneActor(const SceneActor* sceneActor);
+
     void ApplyAmbientLightColorToActors();
     BSP* GetBSP() const;
-	void ExecuteAction(const Action* action);
+    void ExecuteAction(const Action* action);
 };
 
 /*

@@ -4,15 +4,11 @@
 #include "AssetManager.h"
 #include "GameProgress.h"
 #include "InventoryManager.h"
-#include "Random.h"
 #include "Scene.h"
 #include "Sidney.h"
-#include "SidneyButton.h"
 #include "SidneyFakeInputPopup.h"
 #include "SidneyFiles.h"
 #include "SidneyUtil.h"
-#include "UIButton.h"
-#include "UIImage.h"
 #include "UILabel.h"
 #include "UINineSlice.h"
 #include "UIUtil.h"
@@ -24,27 +20,22 @@ void SidneyAddData::Init(Sidney* sidney, SidneyFiles* sidneyFiles)
 
     // Add "Add Data" dialog box.
     {
-        mAddDataBox = new Actor("Add Data", TransformType::RectTransform);
-        mAddDataBox->GetTransform()->SetParent(sidney->GetTransform());
+        UINineSlice* outerBox = UI::CreateWidgetActor<UINineSlice>("Add Data", sidney, SidneyUtil::GetGrayBoxParams(Color32(0, 0, 0, 160)));
+        outerBox->GetRectTransform()->SetSizeDelta(248.0f, 44.0f);
+        mAddDataBox = outerBox->GetOwner();
 
-        UINineSlice* outerBoxImage = mAddDataBox->AddComponent<UINineSlice>(SidneyUtil::GetGrayBoxParams(Color32(0, 0, 0, 160)));
-        outerBoxImage->GetRectTransform()->SetSizeDelta(248.0f, 44.0f);
-
-        Actor* innerBoxActor = new Actor(TransformType::RectTransform);
-        innerBoxActor->GetTransform()->SetParent(mAddDataBox->GetTransform());
-
-        UINineSlice* innerBoxImage = innerBoxActor->AddComponent<UINineSlice>(SidneyUtil::GetGrayBoxParams(Color32(0, 0, 0, 180)));
-        innerBoxImage->GetRectTransform()->SetSizeDelta(220.0f, 17.0f);
+        UINineSlice* innerBox = UI::CreateWidgetActor<UINineSlice>("LabelBox", mAddDataBox, SidneyUtil::GetGrayBoxParams(Color32(0, 0, 0, 180)));
+        innerBox->GetRectTransform()->SetSizeDelta(220.0f, 17.0f);
 
         mGreenFont = gAssetManager.LoadFont("SID_TEXT_14_GRN.FON");
         mYellowFont = gAssetManager.LoadFont("SID_TEXT_14.FON");
 
-        mAddDataLabel = UIUtil::NewUIActorWithWidget<UILabel>(innerBoxImage->GetOwner());
+        mAddDataLabel = UI::CreateWidgetActor<UILabel>("AddDataLabel", innerBox);
         mAddDataLabel->SetHorizonalAlignment(HorizontalAlignment::Center);
         mAddDataLabel->SetFont(mGreenFont);
         mAddDataLabel->SetMasked(true);
-        mAddDataLabel->GetRectTransform()->SetAnchor(AnchorPreset::CenterStretch);
-        mAddDataLabel->GetRectTransform()->SetSizeDelta(0.0f, -1.0f);
+        mAddDataLabel->GetRectTransform()->SetAnchor(AnchorPreset::Top);
+        mAddDataLabel->GetRectTransform()->SetSizeDelta(200.0f, 16.0f);
 
         // Hide by default.
         mAddDataBox->SetActive(false);
@@ -93,7 +84,7 @@ void SidneyAddData::OnUpdate(float deltaTime)
     if(mAddingData)
     {
         // Wait for player to close inventory.
-        if(!gInventoryManager.IsInventoryShowing() && !gActionManager.IsActionPlaying())
+        if(!gInventoryManager.IsInventoryShowing() && !gInventoryManager.IsInventoryInspectShowing() && !gActionManager.IsActionPlaying())
         {
             // Clear "using scanner" flag.
             gGameProgress.ClearFlag("UsingScanner");
@@ -111,7 +102,7 @@ void SidneyAddData::OnUpdate(float deltaTime)
                 mAddDataLabel->SetText(SidneyUtil::GetAddDataLocalizer().GetText("AbortInput"));
                 mAddDataLabel->SetFont(mGreenFont);
                 mAddDataColorTimer = -1.0f;
-                
+
                 // This puts the player in a non-interactive state for a moment (so they can read the text box) and then puts them back on the main screen.
                 gActionManager.ExecuteSheepAction("wait SetTimerSeconds(2);", [this](const Action* action){
                     mAddDataBox->SetActive(false);
@@ -130,7 +121,7 @@ void SidneyAddData::OnUpdate(float deltaTime)
                     gActionManager.ExecuteSheepAction("wait StartDialogue(\"02O4G716R1\", 1)");
                 }
             }
-            else 
+            else
             {
                 // CASE 3: Valid object selected, not scanned yet.
                 // Show box (and SFX) indicating we are scanning an item.
@@ -141,7 +132,7 @@ void SidneyAddData::OnUpdate(float deltaTime)
                 mAddDataLabel->SetText(SidneyUtil::GetAddDataLocalizer().GetText("ScanningItem"));
                 mAddDataLabel->SetFont(mGreenFont);
                 mAddDataColorTimer = kAddDataColorToggleInterval;
-                
+
                 // This puts the player in a non-interactive state for a moment (so they can read the text box and hear SFX).
                 gActionManager.ExecuteSheepAction("wait SetTimerSeconds(2);", [this, sidneyFileId](const Action* action){
 

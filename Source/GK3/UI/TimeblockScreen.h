@@ -8,6 +8,9 @@
 
 #include <functional>
 
+#include "LayerManager.h"
+#include "WaitForNoInput.h"
+
 class Sequence;
 class Timeblock;
 class UIButton;
@@ -18,13 +21,15 @@ class TimeblockScreen : public Actor
 public:
     TimeblockScreen();
 
-    void Show(const Timeblock& timeblock, float timer, std::function<void()> callback);
+    void Show(const Timeblock& timeblock, float timer, bool loadingSave, const std::function<void()>& callback);
     void Hide();
 
 protected:
     void OnUpdate(float deltaTime) override;
 
 private:
+    Layer mLayer;
+
     // The background image changes depending on the current timeblock.
     UIImage* mBackgroundImage = nullptr;
 
@@ -45,4 +50,7 @@ private:
 
     // A callback to execute when the screen is done showing.
     std::function<void()> mCallback;
+
+    // Helper for dealing with shortcut keys correctly.
+    WaitForNoInput mWaitForNoInput;
 };

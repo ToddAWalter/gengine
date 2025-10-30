@@ -3,17 +3,19 @@
 #include "AssetManager.h"
 #include "Font.h"
 #include "GKActor.h"
+#include "GK3UI.h"
 #include "IniParser.h"
 #include "LocationManager.h"
 #include "SceneManager.h"
 #include "TextAsset.h"
-#include "Texture.h"
 #include "UIButton.h"
 #include "UICanvas.h"
 #include "UIImage.h"
 #include "UILabel.h"
 #include "UIUtil.h"
 #include "Window.h"
+
+bool GPSOverlay::sShowing = false;
 
 GPSOverlay::GPSOverlay() : Actor("GPSOverlay", TransformType::RectTransform)
 {
@@ -44,32 +46,32 @@ GPSOverlay::GPSOverlay() : Actor("GPSOverlay", TransformType::RectTransform)
 
     // Create base map image in top-left.
     // No image yet, since that's affected by both the location and layout used.
-    mMapImage = UIUtil::NewUIActorWithWidget<UIImage>(this);
+    mMapImage = UI::CreateWidgetActor<UIImage>("Map", this);
     mMapImage->GetRectTransform()->SetAnchor(AnchorPreset::TopLeft);
     mMapImage->GetRectTransform()->SetAnchoredPosition(2.0f, -2.0f);
 
     // Add latitude/longitude labels.
     // Not yet positioned, since that changes based on the layout used.
-    mLatitudeLabel = UIUtil::NewUIActorWithWidget<UILabel>(mMapImage->GetOwner());
+    mLatitudeLabel = UI::CreateWidgetActor<UILabel>("Latitude", mMapImage);
     mLatitudeLabel->GetRectTransform()->SetAnchor(AnchorPreset::TopLeft);
-    
-    mLongitudeLabel = UIUtil::NewUIActorWithWidget<UILabel>(mMapImage->GetOwner());
+
+    mLongitudeLabel = UI::CreateWidgetActor<UILabel>("Longitude", mMapImage);
     mLongitudeLabel->GetRectTransform()->SetAnchor(AnchorPreset::TopLeft);
 
     // Add target reticule square and vertical/horizontal lines.
     // No image/position is yet set, since those are affected by which layout we use.
-    mTargetSquareImage = UIUtil::NewUIActorWithWidget<UIImage>(mMapImage->GetOwner());
+    mTargetSquareImage = UI::CreateWidgetActor<UIImage>("TargetSquare", mMapImage);
     mTargetSquareImage->GetRectTransform()->SetAnchor(AnchorPreset::TopLeft);
 
-    mVerticalLineImage = UIUtil::NewUIActorWithWidget<UIImage>(mMapImage->GetOwner());
+    mVerticalLineImage = UI::CreateWidgetActor<UIImage>("TargetVertLine", mMapImage);
     mVerticalLineImage->GetRectTransform()->SetAnchor(AnchorPreset::TopLeft);
 
-    mHorizontalLineImage = UIUtil::NewUIActorWithWidget<UIImage>(mMapImage->GetOwner());
+    mHorizontalLineImage = UI::CreateWidgetActor<UIImage>("TargetHorizLine", mMapImage);
     mHorizontalLineImage->GetRectTransform()->SetAnchor(AnchorPreset::TopLeft);
 
     // Add power button.
     // Again, position and exact textures aren't set because they depend on the layout used.
-    mPowerButton = UIUtil::NewUIActorWithWidget<UIButton>(mMapImage->GetOwner());
+    mPowerButton = UI::CreateWidgetActor<UIButton>("PowerButton", mMapImage);
     mPowerButton->GetRectTransform()->SetAnchor(AnchorPreset::TopLeft);
     mPowerButton->SetPressCallback([this](UIButton* button) {
         Hide();
@@ -85,6 +87,9 @@ GPSOverlay::GPSOverlay() : Actor("GPSOverlay", TransformType::RectTransform)
 
 void GPSOverlay::Show()
 {
+    SetActive(true);
+    sShowing = true;
+
     // Figure out our current location.
     std::string location = gLocationManager.GetLocation();
     auto it = mLocations.find(location);
@@ -98,24 +103,11 @@ void GPSOverlay::Show()
         mCurrentLocation = &mLocations.begin()->second;
     }
 
-    // Figure out which UI layout to use, based on window resolution.
-    Vector2 windowSize = Window::GetSize();
-    int layoutIndex = 2;
-    if(windowSize.x <= 640)
-    {
-        layoutIndex = 0;
-    }
-    else if(windowSize.x <= 800)
-    {
-        layoutIndex = 1;
-    }
-
-    // Apply the desired layout.
-    ApplyLayout(layoutIndex);
+    // Refresh layout based on screen resolution.
+    RefreshLayout();
 
     // When initially showing the device, it shows in a powered-off state.
     SetPoweredOnUIVisible(false);
-    SetActive(true);
 
     // But after a moment, we'll show the powered-on state.
     mPowerDelayTimer = kPowerDelay;
@@ -130,6 +122,20 @@ void GPSOverlay::Hide()
     // But after a moment, we hide the device entirely.
     mPowerDelayTimer = kPowerDelay;
     mPoweringOn = false;
+
+    sShowing = false;
+}
+
+/*static*/ void GPSOverlay::OnPersist(PersistState& ps)
+{
+    // Save whether GPS is showing or not.
+    ps.Xfer(PERSIST_VAR(sShowing));
+
+    // If loading, and GPS should be showing, make sure it is shown.
+    if(ps.IsLoading() && sShowing)
+    {
+        gGK3UI.ShowGPSOverlay();
+    }
 }
 
 void GPSOverlay::OnUpdate(float deltaTime)
@@ -164,6 +170,10 @@ void GPSOverlay::OnUpdate(float deltaTime)
         SetTargetReticuleTexturePos(egoTexturePos);
         SetLatLongFromTexturePos(egoTexturePos);
     }
+
+    // Refresh layout based on screen resolution.
+    // It's actually necessary to do this in Update, since players can change the resolution while this UI is displayed.
+    RefreshLayout();
 }
 
 void GPSOverlay::SetPoweredOnUIVisible(bool visible)
@@ -235,7 +245,7 @@ void GPSOverlay::SetLatLongFromTexturePos(const Vector2& texturePos)
 {
     // GENERAL NOTE: I don't feel incredibly confident that this math is correct. However, I think it's passable.
     // The latitude and longitudes match pretty closely with the three instances you use the GPS in the original game.
-    // They aren't exact, but at least the values lead the player to the correct spots, and the values at the correct spots look very close to correct. 
+    // They aren't exact, but at least the values lead the player to the correct spots, and the values at the correct spots look very close to correct.
 
     // Convert reference world position to texture space.
     Vector2 refTexturePos = WorldPosToGPSTexturePos(mCurrentLocation->referenceWorldPosition);
@@ -459,7 +469,7 @@ void GPSOverlay::ApplyLayout(int index)
     }
 
     mVerticalLineImage->SetTexture(mLayouts[index].verticalLineTexture, true);
-    mHorizontalLineImage->SetTexture(mLayouts[index].horizontalLineTexture, true); 
+    mHorizontalLineImage->SetTexture(mLayouts[index].horizontalLineTexture, true);
     mTargetSquareImage->SetTexture(mLayouts[index].targetSquareTexture, true);
 
     mLatitudeLabel->SetFont(mLayouts[index].font);
@@ -474,4 +484,23 @@ void GPSOverlay::ApplyLayout(int index)
     mPowerButton->SetDownTexture(mLayouts[index].powerButtonDownTexture);
     mPowerButton->SetHoverTexture(mLayouts[index].powerButtonHoverTexture);
     mPowerButton->SetDisabledTexture(mLayouts[index].powerButtonDisabledTexture);
+}
+
+void GPSOverlay::RefreshLayout()
+{
+    // The devs created specific layouts for 640x480, 800x600, and 1024x768 resolutions.
+    // For anything higher than 1024x768 that is not scaled, use the 1024x768 resolution.
+    // However, once UI scaling starts to occur, it looks better to just use the 640x480 version.
+    int layoutIndex = 2; // 1024x768
+    if(Window::GetWidth() <= 640 || GetComponent<UICanvas>()->GetScaleFactor() > 1.0f)
+    {
+        layoutIndex = 0; // 640x480
+    }
+    else if(Window::GetWidth() <= 800)
+    {
+        layoutIndex = 1; // 800x600
+    }
+
+    // Apply the desired layout.
+    ApplyLayout(layoutIndex);
 }

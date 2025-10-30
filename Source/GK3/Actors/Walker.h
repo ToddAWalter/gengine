@@ -10,7 +10,6 @@
 #include "Component.h"
 
 #include <functional>
-#include <string>
 #include <vector>
 
 #include "Vector3.h"
@@ -21,47 +20,57 @@ class GKActor;
 class GKObject;
 class GKProp;
 class Heading;
+class PersistState;
 class Texture;
+class VertexAnimation;
 class WalkerBoundary;
 
 class Walker : public Component
 {
     TYPEINFO_SUB(Walker, Component);
 public:
-	Walker(Actor* owner);
+    Walker(Actor* owner);
+    ~Walker();
 
-    void SetWalkerBoundary(WalkerBoundary* walkerBoundary) { mWalkerBoundary = walkerBoundary; }
+    void SetWalkerBoundary(WalkerBoundary* walkerBoundary);
     void SetCharacterConfig(const CharacterConfig& characterConfig);
     void SetWalkAnims(Animation* startAnim, Animation* loopAnim,
                       Animation* startTurnLeftAnim, Animation* startTurnRightAnim);
 
-	void WalkTo(const Vector3& position, std::function<void()> finishCallback);
-	void WalkTo(const Vector3& position, const Heading& heading, std::function<void()> finishCallback);
-    void WalkToGas(const Vector3& position, const Heading& heading, std::function<void()> finishCallback);
-    void WalkToSee(GKObject* target, std::function<void()> finishCallback);
+    void WalkToBestEffort(const Vector3& position, const Heading& heading, const std::function<void()>& finishCallback);
+    void WalkToExact(const Vector3& position, const Heading& heading, const std::function<void()>& finishCallback);
+    void WalkToGas(const Vector3& position, const Heading& heading, const std::function<void()>& finishCallback);
+    void WalkToSee(GKObject* target, const std::function<void()>& finishCallback);
 
-    void WalkOutOfRegion(int regionIndex, const Vector3& exitPosition, const Heading& exitHeading, std::function<void()> finishCallback);
+    void WalkOutOfRegion(int regionIndex, const Vector3& exitPosition, const Heading& exitHeading, const std::function<void()>& finishCallback);
 
     void SkipToEnd(bool alsoSkipWalkEndAnim = false);
+    void StopWalk();
 
-    bool AtPosition(const Vector3& position);
+    bool AtPosition(const Vector3& position, float maxDistance = kAtNodeDist);
     bool IsWalking() const { return mWalkActions.size() > 0; }
     bool IsWalkingExceptTurn() const { return IsWalking() && mWalkActions.back() != WalkOp::TurnToFace; }
     Vector3 GetDestination() const { return mPath.size() > 0 ? mPath.front() : Vector3::Zero; }
 
+    bool IsWalkAnimation(VertexAnimation* vertexAnim) const;
+
+    void OnPersist(PersistState& ps);
+
 protected:
-	void OnUpdate(float deltaTime) override;
-	
+    void OnEnable() override;
+    void OnDisable() override;
+    void OnUpdate(float deltaTime) override;
+
 private:
     // When this close to a position/heading, we say you are "at" the position/heading.
     static constexpr float kAtNodeDist = 12.25f;
     static constexpr float kAtNodeDistSq = kAtNodeDist * kAtNodeDist;
     static constexpr float kAtHeadingRadians = Math::ToRadians(4.0f);
-    
+
     // Turn speeds. When walking, turn faster when the next path node is very close - slower when farther away.
     // A faster speed is used for turning in place when not walking.
     static constexpr float kWalkTurnSpeedMin = Math::kPiOver2;
-    static constexpr float kWalkTurnSpeedMax = Math::k2Pi;
+    static constexpr float kWalkTurnSpeedMax = Math::k2Pi * 2;
     static constexpr float kTurnSpeed = Math::k2Pi;
 
     // CONFIG
@@ -81,9 +90,6 @@ private:
     Animation* mWalkStartTurnLeftAnim = nullptr;
     Animation* mWalkStartTurnRightAnim = nullptr;
 
-    // If true, the walk anims are overridden, and don't match the "walk end" anim.
-    bool mUsingOverrideWalkAnims = false;
-
     // WALK PLANNING
     // When a walk begins, a "plan" is generated and stored in the walk ops vector.
     // Ex: we may calculate plan: turn right, then follow path, then end move, then turn to face heading.
@@ -101,18 +107,22 @@ private:
 
     // In at least one case, it's helpful to know what the previous walk operation was.
     WalkOp mPrevWalkOp = WalkOp::None;
-    
+
     // The amount of time spent on the current walk action.
     float mCurrentWalkActionTimer = 0.0f;
 
-	// The path to follow when in the FollowPath state.
+    // The path to follow when in the FollowPath state.
     // Note that this path is BACKWARDS - the goal is front() and next node to go to is back().
-	std::vector<Vector3> mPath;
+    std::vector<Vector3> mPath;
+
+    // The final position to be at when the walk ends.
+    // This usually matches mPath.front(), but kept separate so we can use it after the path has been followed.
+    Vector3 mFinalPosition;
 
     // The facing direction to use in the TurnToFace state.
     Vector3 mTurnToFaceDir = Vector3::UnitX;
-	
-	// A target (e.g. model) that we are walking to see when using "Walk To See".
+
+    // A target (e.g. model) that we are walking to see when using "Walk To See".
     GKObject* mWalkToSeeTarget = nullptr;
 
     // A callback for when the current walk plan has completed (we've reached our destination).
@@ -130,27 +140,27 @@ private:
     int mExitRegionIndex = -1;
     std::function<void()> mExitRegionCallback = nullptr;
 
-    void WalkToInternal(const Vector3& position, const Heading& heading, std::function<void()> finishCallback, bool fromAutoscript);
+    void WalkToInternal(const Vector3& position, const Heading& heading, const std::function<void()>& finishCallback, bool fromAutoscript, bool mustReachDestination);
 
     void PopAndNextAction();
     void NextAction();
-    
+
     WalkOp GetCurrentWalkOp() const { return mWalkActions.empty() ? WalkOp::None : mWalkActions.back(); }
-	void OnWalkAnimFinished();
-	void OnWalkToFinished();
-	
+    void OnWalkToFinished();
+
     bool IsWalkToSeeTargetInView(Vector3& outTurnToFaceDir) const;
-    
-    void CalculatePath(const Vector3& startPos, const Vector3& endPos);
+    bool IsWalkToSeeTargetInView(const Vector3& headPosition, Vector3& outTurnToFaceDir) const;
+    int FindPathNodeWhereWalkToSeeIsInView(Vector3& outInViewPos, Vector3& outTurnToFaceDir);
+
+    int FindEarliestPathNodeInsideActiveTriggerRegion(Vector3& outEnterTriggerRegionPos);
     bool SkipPathNodesOutsideFrustum();
-    void RemoveExcessPathNodes();
 
     bool AdvancePath();
-    void UpdateNextNodesYPos();
 
-    float GetWalkTurnSpeed(Vector3 toNext);
+    float GetWalkTurnSpeed(const Vector3& toNext);
     bool TurnToFace(float deltaTime, const Vector3& desiredDir, float turnSpeed);
 
+    void PlayWalkLoopAnim(bool fromWalkStart);
     void StopAllWalkAnimations();
 
     void OutputWalkerPlan();

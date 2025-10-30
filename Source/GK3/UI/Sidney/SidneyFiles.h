@@ -12,12 +12,13 @@
 #include "AssetManager.h"
 #include "InventoryManager.h"
 #include "SidneyUtil.h"
-#include "StringUtil.h"
+#include "Texture.h"
 
 class PersistState;
 class Sidney;
 class UIButton;
 class UILabel;
+class UIScrollRect;
 
 namespace SidneyFileIds
 {
@@ -79,7 +80,7 @@ struct SidneyFile
 
     // Has the file ever been analyzed before? Affects the behavior of opening a file in the Analyze view.
     bool hasBeenAnalyzed = false;
-    
+
     SidneyFile() = default;
     SidneyFile(const SidneyFile&) = default;
     SidneyFile(SidneyFile&&) = default;
@@ -98,7 +99,7 @@ struct SidneyFile
     {
         // We just reuse the inventory list texture for this.
         Texture* texture = gInventoryManager.GetInventoryItemListTexture(invItemName);
-        if(texture == nullptr)
+        if(texture == nullptr || StringUtil::StartsWithIgnoreCase(texture->GetName(), "Undefined"))
         {
             // Some files don't have an inventory item - just fall back on a generic file icon.
             texture = gAssetManager.LoadTexture("SIDFILE_9.BMP");
@@ -176,7 +177,7 @@ private:
 
     // Files UI root.
     Actor* mRoot = nullptr;
-    
+
     // A button used for each entry in the file list window.
     struct FileListButton
     {
@@ -206,6 +207,9 @@ private:
 
         // The title label.
         UILabel* mTitleLabel = nullptr;
+
+        // A scroll rect containing the file list (in case it overflows the available space).
+        UIScrollRect* mScrollRect = nullptr;
 
         // Each button is a selection in the window.
         std::vector<FileListButton> mButtons;
